@@ -1,4 +1,4 @@
-#include "types.h"
+#include "kernel/types.h"
 #include "kernel/xtensa/port.h"
 #include "kernel/xtensa/xtensa.h"
 

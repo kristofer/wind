@@ -1,7 +1,7 @@
 #ifndef XV6_XTENSA_PORT_H
 #define XV6_XTENSA_PORT_H
 
-#include "types.h"
+#include "kernel/types.h"
 
 #define XTENSA_CPU_HZ 80000000U
 #define XTENSA_TICK_HZ 1000U
@@ -16,6 +16,9 @@ struct xtensa_context {
 };
 
 void xtensa_context_switch(struct xtensa_context *old, struct xtensa_context *new);
+void xtensa_kernel_init(void);
+void xtensa_kernel_poll(void);
+void xtensa_kernel_main(void);
 
 void uart_init(void);
 void uart_putc(char c);

@@ -1,0 +1,2 @@
+source /Users/kryounger/LocalProjects/wind/xv6-riscv/esp32s3-idf/build/bootloader/gdbinit/symbols
+source /Users/kryounger/LocalProjects/wind/xv6-riscv/esp32s3-idf/build/bootloader/gdbinit/connect

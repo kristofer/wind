@@ -1,4 +1,4 @@
-#include "types.h"
+#include "kernel/types.h"
 #include "kernel/xtensa/xtensa.h"
 
 #define UART0_BASE 0x60000000U

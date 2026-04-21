@@ -67,6 +67,8 @@ SECTIONS
 
   .text :
   {
+    KEEP(*(.literal.start))
+    *(.literal .literal.*)
     KEEP(*(.text.start))
     *(.text .text.*)
     *(.rodata .rodata.*)

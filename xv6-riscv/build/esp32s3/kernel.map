@@ -1,0 +1,268 @@
+
+Discarded input sections
+
+ .text          0x00000000        0x0 build/esp32s3/start.o
+ .data          0x00000000        0x0 build/esp32s3/start.o
+ .bss           0x00000000        0x0 build/esp32s3/start.o
+ .xt.lit        0x00000000        0x8 build/esp32s3/start.o
+ .xt.prop       0x00000000       0x30 build/esp32s3/start.o
+ .text          0x00000000        0x0 build/esp32s3/vectors.o
+ .data          0x00000000        0x0 build/esp32s3/vectors.o
+ .bss           0x00000000        0x0 build/esp32s3/vectors.o
+ .xt.lit        0x00000000       0x50 build/esp32s3/vectors.o
+ .xt.prop       0x00000000      0x204 build/esp32s3/vectors.o
+ .text          0x00000000       0x1a build/esp32s3/context.o
+ .data          0x00000000        0x0 build/esp32s3/context.o
+ .bss           0x00000000        0x0 build/esp32s3/context.o
+ .xt.prop       0x00000000       0x24 build/esp32s3/context.o
+ .data          0x00000000        0x0 build/esp32s3/main.o
+ .bss           0x00000000        0x0 build/esp32s3/main.o
+ .xt.lit        0x00000000        0x8 build/esp32s3/main.o
+ .xt.prop       0x00000000       0x84 build/esp32s3/main.o
+ .data          0x00000000        0x0 build/esp32s3/uart.o
+ .bss           0x00000000        0x0 build/esp32s3/uart.o
+ .xt.lit        0x00000000        0x8 build/esp32s3/uart.o
+ .xt.prop       0x00000000       0x90 build/esp32s3/uart.o
+ .data          0x00000000        0x0 build/esp32s3/timer.o
+ .xt.lit        0x00000000        0x8 build/esp32s3/timer.o
+ .xt.prop       0x00000000       0x78 build/esp32s3/timer.o
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+iram             0x40370000         0x00040000         xr
+dram             0x3fc88000         0x00050000         rw
+psram            0x3d000000         0x00800000         rw
+*default*        0x00000000         0xffffffff
+
+Linker script and memory map
+
+LOAD build/esp32s3/start.o
+LOAD build/esp32s3/vectors.o
+LOAD build/esp32s3/context.o
+LOAD build/esp32s3/main.o
+LOAD build/esp32s3/uart.o
+LOAD build/esp32s3/timer.o
+                0x00004000                        STACK_SIZE = 0x4000
+
+.WindowVectors  0x40370000        0x3
+ *(.WindowVectors.text)
+ .WindowVectors.text
+                0x40370000        0x3 build/esp32s3/vectors.o
+                0x40370000                xtensa_window_vectors
+
+.Level2InterruptVector
+                0x40370180        0x6
+ *(.Level2InterruptVector.text)
+ .Level2InterruptVector.text
+                0x40370180        0x6 build/esp32s3/vectors.o
+                                  0x9 (size before relaxing)
+                0x40370180                xtensa_level2_vector
+
+.Level1InterruptVector
+                0x403701a0        0x6
+ *(.Level1InterruptVector.text)
+ .Level1InterruptVector.text
+                0x403701a0        0x6 build/esp32s3/vectors.o
+                                  0x9 (size before relaxing)
+                0x403701a0                xtensa_level1_vector
+
+.Level3InterruptVector
+                0x403701c0        0x6
+ *(.Level3InterruptVector.text)
+ .Level3InterruptVector.text
+                0x403701c0        0x6 build/esp32s3/vectors.o
+                                  0x9 (size before relaxing)
+                0x403701c0                xtensa_level3_vector
+
+.Level4InterruptVector
+                0x40370200        0x6
+ *(.Level4InterruptVector.text)
+ .Level4InterruptVector.text
+                0x40370200        0x6 build/esp32s3/vectors.o
+                                  0x9 (size before relaxing)
+                0x40370200                xtensa_level4_vector
+
+.Level5InterruptVector
+                0x40370240        0x6
+ *(.Level5InterruptVector.text)
+ .Level5InterruptVector.text
+                0x40370240        0x6 build/esp32s3/vectors.o
+                                  0x9 (size before relaxing)
+                0x40370240                xtensa_level5_vector
+
+.DebugExceptionVector
+                0x40370280        0x6
+ *(.DebugExceptionVector.text)
+ .DebugExceptionVector.text
+                0x40370280        0x6 build/esp32s3/vectors.o
+                                  0x9 (size before relaxing)
+                0x40370280                xtensa_debug_exception_vector
+
+.NMIExceptionVector
+                0x403702c0        0x6
+ *(.NMIExceptionVector.text)
+ .NMIExceptionVector.text
+                0x403702c0        0x6 build/esp32s3/vectors.o
+                                  0x9 (size before relaxing)
+                0x403702c0                xtensa_nmi_exception_vector
+
+.KernelExceptionVector
+                0x40370300        0x6
+ *(.KernelExceptionVector.text)
+ .KernelExceptionVector.text
+                0x40370300        0x6 build/esp32s3/vectors.o
+                                  0x9 (size before relaxing)
+                0x40370300                xtensa_kernel_exception_vector
+
+.UserExceptionVector
+                0x40370340        0x6
+ *(.UserExceptionVector.text)
+ .UserExceptionVector.text
+                0x40370340        0x6 build/esp32s3/vectors.o
+                                  0x9 (size before relaxing)
+                0x40370340                xtensa_user_exception_vector
+
+.DoubleExceptionVector
+                0x403703c0        0x6
+ *(.DoubleExceptionVector.text)
+ .DoubleExceptionVector.text
+                0x403703c0        0x6 build/esp32s3/vectors.o
+                                  0x9 (size before relaxing)
+                0x403703c0                xtensa_double_exception_vector
+
+.text           0x403703c8      0x1b6
+ *(.literal.start)
+ .literal.start
+                0x403703c8        0x4 build/esp32s3/start.o
+                                  0x8 (size before relaxing)
+ *(.literal .literal.*)
+ .literal       0x403703cc       0x1c build/esp32s3/main.o
+                                 0x3c (size before relaxing)
+ .literal       0x403703e8        0x4 build/esp32s3/uart.o
+ .literal       0x403703ec        0x8 build/esp32s3/timer.o
+                                 0x14 (size before relaxing)
+ *(.text.start)
+ .text.start    0x403703f4        0x9 build/esp32s3/start.o
+                                  0xc (size before relaxing)
+                0x403703f4                _start
+ *(.text .text.*)
+ *fill*         0x403703fd        0x3 
+ .text          0x40370400       0x5c build/esp32s3/main.o
+                                 0x77 (size before relaxing)
+                0x40370400                xtensa_handle_level1_interrupt
+                0x40370408                xtensa_handle_exception
+                0x40370414                xtensa_kernel_main
+ *fill*         0x4037045c        0x0 
+ .text          0x4037045c       0x4c build/esp32s3/uart.o
+                0x4037045c                uart_init
+                0x40370464                uart_putc
+                0x40370488                uart_puts
+ .text          0x403704a8       0x61 build/esp32s3/timer.o
+                0x403704a8                xtensa_timer_interrupt
+                0x403704cc                timer_init
+                0x403704f4                timer_ticks
+ *fill*         0x40370509        0x0 
+ *(.rodata .rodata.*)
+ .rodata.str1.1
+                0x40370509       0x75 build/esp32s3/main.o
+
+.Level2InterruptVector.literal
+                0x40370580        0x0
+ .Level2InterruptVector.literal
+                0x40370580        0x0 build/esp32s3/vectors.o
+                                  0x4 (size before relaxing)
+
+.Level1InterruptVector.literal
+                0x40370580        0x0
+ .Level1InterruptVector.literal
+                0x40370580        0x0 build/esp32s3/vectors.o
+                                  0x4 (size before relaxing)
+
+.Level3InterruptVector.literal
+                0x40370580        0x0
+ .Level3InterruptVector.literal
+                0x40370580        0x0 build/esp32s3/vectors.o
+                                  0x4 (size before relaxing)
+
+.Level4InterruptVector.literal
+                0x40370580        0x0
+ .Level4InterruptVector.literal
+                0x40370580        0x0 build/esp32s3/vectors.o
+                                  0x4 (size before relaxing)
+
+.Level5InterruptVector.literal
+                0x40370580        0x0
+ .Level5InterruptVector.literal
+                0x40370580        0x0 build/esp32s3/vectors.o
+                                  0x4 (size before relaxing)
+
+.DebugExceptionVector.literal
+                0x40370580        0x0
+ .DebugExceptionVector.literal
+                0x40370580        0x0 build/esp32s3/vectors.o
+                                  0x4 (size before relaxing)
+
+.NMIExceptionVector.literal
+                0x40370580        0x0
+ .NMIExceptionVector.literal
+                0x40370580        0x0 build/esp32s3/vectors.o
+                                  0x4 (size before relaxing)
+
+.KernelExceptionVector.literal
+                0x40370580        0x0
+ .KernelExceptionVector.literal
+                0x40370580        0x0 build/esp32s3/vectors.o
+                                  0x4 (size before relaxing)
+
+.UserExceptionVector.literal
+                0x40370580        0x0
+ .UserExceptionVector.literal
+                0x40370580        0x0 build/esp32s3/vectors.o
+                                  0x4 (size before relaxing)
+
+.DoubleExceptionVector.literal
+                0x40370580        0x0
+ .DoubleExceptionVector.literal
+                0x40370580        0x0 build/esp32s3/vectors.o
+                                  0x4 (size before relaxing)
+
+.data
+ *(.data .data.*)
+
+.bss            0x3fc88000        0x8
+                0x3fc88000                        . = ALIGN (0x10)
+                0x3fc88000                        __bss_start = .
+ *(.bss .bss.*)
+ .bss           0x3fc88000        0x8 build/esp32s3/timer.o
+ *(COMMON)
+                0x3fc88008                        __bss_end = .
+
+.stack          0x3fc88008     0x4008
+                0x3fc88010                        . = ALIGN (0x10)
+ *fill*         0x3fc88008        0x8 
+                0x3fc88010                        _stack_bottom = .
+                0x3fc8c010                        . = (. + STACK_SIZE)
+ *fill*         0x3fc88010     0x4000 
+                0x3fc8c010                        _stack_top = .
+
+.psram          0x3d000000        0x0
+                0x3d000000                        __psram_start = ORIGIN (psram)
+                0x3d800000                        __psram_end = (ORIGIN (psram) + LENGTH (psram))
+OUTPUT(build/esp32s3/kernel.elf elf32-xtensa-le)
+
+.xtensa.info    0x00000000       0x38
+ .xtensa.info   0x00000000       0x38 build/esp32s3/start.o
+ .xtensa.info   0x00000038        0x0 build/esp32s3/vectors.o
+ .xtensa.info   0x00000038        0x0 build/esp32s3/context.o
+ .xtensa.info   0x00000038        0x0 build/esp32s3/main.o
+ .xtensa.info   0x00000038        0x0 build/esp32s3/uart.o
+ .xtensa.info   0x00000038        0x0 build/esp32s3/timer.o
+
+.comment        0x00000000       0x2f
+ .comment       0x00000000       0x2f build/esp32s3/main.o
+                                 0x30 (size before relaxing)
+ .comment       0x0000002f        0x0 build/esp32s3/uart.o
+                                 0x30 (size before relaxing)
+ .comment       0x0000002f        0x0 build/esp32s3/timer.o
+                                 0x30 (size before relaxing)

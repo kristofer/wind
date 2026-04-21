@@ -1,7 +1,7 @@
 #ifndef XV6_XTENSA_H
 #define XV6_XTENSA_H
 
-#include "types.h"
+#include "kernel/types.h"
 
 static inline uint32
 xtensa_read_ccount(void)
