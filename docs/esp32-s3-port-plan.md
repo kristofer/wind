@@ -1,6 +1,6 @@
 # ESP32-S3 xv6 Porting Plan (Initial)
 
-This document starts the porting plan from `xv6-riscv` to an ESP32-S3 target with 8MB RAM, assuming the toolchain is `clang` + `esptool`.
+This document starts the porting plan from `xv6-riscv` to an ESP32-S3 target with 8MB RAM, assuming the toolchain is `gcc` (Xtensa cross toolchain) + `esptool`.
 
 ## 1) Key architecture differences to account for
 
@@ -34,9 +34,11 @@ This document starts the porting plan from `xv6-riscv` to an ESP32-S3 target wit
 - ESP32-S3 boot flow requires ESP image format, ROM bootloader conventions, partitioning, and flashing via `esptool`.
 - Build artifacts should produce an ESP32-compatible bootable image and a flash map definition.
 
-## 2) Toolchain and build-system migration (`clang` + `esptool`)
+## 2) Toolchain and build-system migration (`gcc` + `esptool`)
 
-1. Add Xtensa target flags and linker flow for `clang`.
+Given ESP32-S3/Xtensa LX7 maturity in Espressif's GCC-based ecosystem, the initial port should standardize on GCC and only revisit Clang after a stable bring-up.
+
+1. Add Xtensa target flags and linker flow for `gcc`.
 2. Split architecture-independent kernel code from RISC-V-specific code.
 3. Introduce ESP32-S3 linker script(s) for IRAM/DRAM/flash placement.
 4. Add image packaging + flash commands using `esptool`.

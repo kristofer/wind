@@ -15,7 +15,7 @@ Imported snapshot:
 
 ## Porting plan
 
-See `/home/runner/work/wind/wind/docs/esp32-s3-port-plan.md` for the initial ESP32-S3 porting plan, including architecture differences and phased implementation milestones using a `clang` + `esptool` workflow.
+See `/home/runner/work/wind/wind/docs/esp32-s3-port-plan.md` for the initial ESP32-S3 porting plan, including architecture differences and phased implementation milestones using a `gcc` + `esptool` workflow.
 
 ## Upstream sync process (repeatable)
 
