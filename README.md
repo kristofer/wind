@@ -17,6 +17,23 @@ Imported snapshot:
 
 See `/home/runner/work/wind/wind/docs/esp32-s3-port-plan.md` for the initial ESP32-S3 porting plan, including architecture differences and phased implementation milestones using a `gcc` + `esptool` workflow.
 
+## ESP32-S3 phase 1 bring-up artifacts
+
+Minimal phase-1 ESP32-S3 bring-up sources now live in:
+
+- `/home/runner/work/wind/wind/xv6-riscv/kernel/xtensa`
+
+Build and flash helpers were added to:
+
+- `/home/runner/work/wind/wind/xv6-riscv/Makefile`
+
+Example commands (from `/home/runner/work/wind/wind/xv6-riscv`):
+
+```bash
+make esp32s3
+make esp32s3-flash ESP_PORT=/dev/ttyACM0
+```
+
 ## Upstream sync process (repeatable)
 
 ```bash

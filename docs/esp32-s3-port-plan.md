@@ -57,6 +57,8 @@ Given ESP32-S3/Xtensa LX7 maturity in Espressif's GCC-based ecosystem, the initi
 - [ ] Provide a minimal linker script and memory map for 8MB RAM configuration.
 - [ ] Boot kernel, print console banner, and service timer interrupt.
 
+Current implementation scaffold: `/home/runner/work/wind/wind/xv6-riscv/kernel/xtensa` with `make esp32s3` / `make esp32s3-flash` helpers.
+
 ## Phase 2: Core kernel services without full VM
 
 - [ ] Implement physical memory allocator for available DRAM/PSRAM policy.

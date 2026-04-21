@@ -34,7 +34,10 @@ OBJS = \
 # perhaps in /opt/riscv/bin
 #TOOLPREFIX = 
 
-# Try to infer the correct TOOLPREFIX if not set
+# Try to infer the correct TOOLPREFIX if not set.
+# Skip this check for ESP32-S3-only bring-up targets.
+ifneq ($(filter esp32s3 esp32s3-flash esp32s3-merge-bin esp32s3-clean,$(MAKECMDGOALS)),)
+else
 ifndef TOOLPREFIX
 TOOLPREFIX := $(shell if riscv64-unknown-elf-objdump -i 2>&1 | grep 'elf64-big' >/dev/null 2>&1; \
 	then echo 'riscv64-unknown-elf-'; \
@@ -50,6 +53,7 @@ TOOLPREFIX := $(shell if riscv64-unknown-elf-objdump -i 2>&1 | grep 'elf64-big' 
 	echo "*** Error: Couldn't find a riscv64 version of GCC/binutils." 1>&2; \
 	echo "*** To turn off this error, run 'gmake TOOLPREFIX= ...'." 1>&2; \
 	echo "***" 1>&2; exit 1; fi)
+endif
 endif
 
 QEMU = qemu-system-riscv64
@@ -187,9 +191,71 @@ qemu-gdb: $K/kernel .gdbinit fs.img
 print-gdbport:
 	@echo $(GDBPORT)
 
-QEMU_VERSION := $(shell $(QEMU) --version | head -n 1 | sed -E 's/^QEMU emulator version ([0-9]+\.[0-9]+)\..*/\1/')
+QEMU_VERSION = $(shell $(QEMU) --version | head -n 1 | sed -E 's/^QEMU emulator version ([0-9]+\.[0-9]+)\..*/\1/')
 check-qemu-version:
 	@if [ "$(shell echo "$(QEMU_VERSION) >= $(MIN_QEMU_VERSION)" | bc)" -eq 0 ]; then \
 		echo "ERROR: Need qemu version >= $(MIN_QEMU_VERSION)"; \
 		exit 1; \
 	fi
+
+#
+# ESP32-S3 phase-1 minimal bring-up targets.
+#
+ESP_K = kernel/xtensa
+ESP_BUILD = build/esp32s3
+ESP_TOOLPREFIX ?= xtensa-esp32s3-elf-
+ESP_CC = $(ESP_TOOLPREFIX)gcc
+ESP_OBJCOPY = $(ESP_TOOLPREFIX)objcopy
+ESP_OBJDUMP = $(ESP_TOOLPREFIX)objdump
+ESP_ESPTOOL ?= esptool.py
+ESP_PORT ?= /dev/ttyACM0
+ESP_BAUD ?= 460800
+ESP_BOOTLOADER ?=
+ESP_PARTITION_TABLE ?=
+
+ESP_OBJS = \
+	$(ESP_BUILD)/start.o \
+	$(ESP_BUILD)/vectors.o \
+	$(ESP_BUILD)/context.o \
+	$(ESP_BUILD)/main.o \
+	$(ESP_BUILD)/uart.o \
+	$(ESP_BUILD)/timer.o
+
+ESP_CFLAGS = -Wall -Werror -Os -ffreestanding -fno-common -fno-builtin -nostdlib -nostartfiles -mlongcalls -I.
+ESP_LDFLAGS = -nostdlib -Wl,--gc-sections -Wl,-Map,$(ESP_BUILD)/kernel.map -T $(ESP_K)/linker.ld
+
+.PHONY: esp32s3 esp32s3-clean esp32s3-flash esp32s3-merge-bin
+
+$(ESP_BUILD):
+	mkdir -p $(ESP_BUILD)
+
+$(ESP_BUILD)/%.o: $(ESP_K)/%.S | $(ESP_BUILD)
+	$(ESP_CC) $(ESP_CFLAGS) -c -o $@ $<
+
+$(ESP_BUILD)/%.o: $(ESP_K)/%.c | $(ESP_BUILD)
+	$(ESP_CC) $(ESP_CFLAGS) -c -o $@ $<
+
+$(ESP_BUILD)/kernel.elf: $(ESP_OBJS) $(ESP_K)/linker.ld
+	$(ESP_CC) $(ESP_CFLAGS) $(ESP_LDFLAGS) -o $@ $(ESP_OBJS)
+	$(ESP_OBJDUMP) -S $@ > $(ESP_BUILD)/kernel.asm
+
+$(ESP_BUILD)/kernel.bin: $(ESP_BUILD)/kernel.elf
+	$(ESP_OBJCOPY) -O binary $< $@
+
+esp32s3: $(ESP_BUILD)/kernel.bin
+
+esp32s3-flash: esp32s3
+	$(ESP_ESPTOOL) --chip esp32s3 --port $(ESP_PORT) --baud $(ESP_BAUD) \
+		write_flash 0x10000 $(ESP_BUILD)/kernel.bin
+
+esp32s3-merge-bin: esp32s3
+	@test -n "$(ESP_BOOTLOADER)" || (echo "Set ESP_BOOTLOADER=/path/to/bootloader.bin"; exit 1)
+	@test -n "$(ESP_PARTITION_TABLE)" || (echo "Set ESP_PARTITION_TABLE=/path/to/partition-table.bin"; exit 1)
+	$(ESP_ESPTOOL) --chip esp32s3 merge_bin -o $(ESP_BUILD)/wind-esp32s3.bin \
+		--flash_mode dio --flash_size 8MB \
+		0x0 $(ESP_BOOTLOADER) \
+		0x8000 $(ESP_PARTITION_TABLE) \
+		0x10000 $(ESP_BUILD)/kernel.bin
+
+esp32s3-clean:
+	rm -rf $(ESP_BUILD)
