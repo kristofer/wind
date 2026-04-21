@@ -36,7 +36,7 @@ OBJS = \
 
 # Try to infer the correct TOOLPREFIX if not set.
 # Skip this check for ESP32-S3-only bring-up targets.
-ifneq ($(filter esp32s3 esp32s3-flash esp32s3-merge-bin esp32s3-clean,$(MAKECMDGOALS)),)
+ifneq ($(filter esp32s3 esp32s3-bin esp32s3-flash esp32s3-merge-bin esp32s3-clean,$(MAKECMDGOALS)),)
 else
 ifndef TOOLPREFIX
 TOOLPREFIX := $(shell if riscv64-unknown-elf-objdump -i 2>&1 | grep 'elf64-big' >/dev/null 2>&1; \
@@ -191,7 +191,10 @@ qemu-gdb: $K/kernel .gdbinit fs.img
 print-gdbport:
 	@echo $(GDBPORT)
 
-QEMU_VERSION = $(shell $(QEMU) --version | head -n 1 | sed -E 's/^QEMU emulator version ([0-9]+\.[0-9]+)\..*/\1/')
+ifneq ($(filter esp32s3 esp32s3-bin esp32s3-flash esp32s3-merge-bin esp32s3-clean,$(MAKECMDGOALS)),)
+else
+QEMU_VERSION := $(shell $(QEMU) --version | head -n 1 | sed -E 's/^QEMU emulator version ([0-9]+\.[0-9]+)\..*/\1/')
+endif
 check-qemu-version:
 	@if [ "$(shell echo "$(QEMU_VERSION) >= $(MIN_QEMU_VERSION)" | bc)" -eq 0 ]; then \
 		echo "ERROR: Need qemu version >= $(MIN_QEMU_VERSION)"; \
@@ -224,7 +227,7 @@ ESP_OBJS = \
 ESP_CFLAGS = -Wall -Werror -Os -ffreestanding -fno-common -fno-builtin -nostdlib -nostartfiles -mlongcalls -I.
 ESP_LDFLAGS = -nostdlib -Wl,--gc-sections -Wl,-Map,$(ESP_BUILD)/kernel.map -T $(ESP_K)/linker.ld
 
-.PHONY: esp32s3 esp32s3-clean esp32s3-flash esp32s3-merge-bin
+.PHONY: esp32s3 esp32s3-bin esp32s3-clean esp32s3-flash esp32s3-merge-bin
 
 $(ESP_BUILD):
 	mkdir -p $(ESP_BUILD)
@@ -242,15 +245,17 @@ $(ESP_BUILD)/kernel.elf: $(ESP_OBJS) $(ESP_K)/linker.ld
 $(ESP_BUILD)/kernel.bin: $(ESP_BUILD)/kernel.elf
 	$(ESP_OBJCOPY) -O binary $< $@
 
-esp32s3: $(ESP_BUILD)/kernel.bin
+esp32s3-bin: $(ESP_BUILD)/kernel.bin
 
-esp32s3-flash: esp32s3
+esp32s3: esp32s3-bin
+
+esp32s3-flash: esp32s3-bin
 	$(ESP_ESPTOOL) --chip esp32s3 --port $(ESP_PORT) --baud $(ESP_BAUD) \
 		write_flash 0x10000 $(ESP_BUILD)/kernel.bin
 
-esp32s3-merge-bin: esp32s3
-	@test -n "$(ESP_BOOTLOADER)" || (echo "Set ESP_BOOTLOADER=/path/to/bootloader.bin"; exit 1)
-	@test -n "$(ESP_PARTITION_TABLE)" || (echo "Set ESP_PARTITION_TABLE=/path/to/partition-table.bin"; exit 1)
+esp32s3-merge-bin: esp32s3-bin
+	@test -n "$(ESP_BOOTLOADER)" || (echo "ERROR: Make variable ESP_BOOTLOADER must be set to /path/to/bootloader.bin"; exit 1)
+	@test -n "$(ESP_PARTITION_TABLE)" || (echo "ERROR: Make variable ESP_PARTITION_TABLE must be set to /path/to/partition-table.bin"; exit 1)
 	$(ESP_ESPTOOL) --chip esp32s3 merge_bin -o $(ESP_BUILD)/wind-esp32s3.bin \
 		--flash_mode dio --flash_size 8MB \
 		0x0 $(ESP_BOOTLOADER) \

@@ -1,5 +1,5 @@
-#ifndef XV6_XTENSA_REGS_H
-#define XV6_XTENSA_REGS_H
+#ifndef XV6_XTENSA_H
+#define XV6_XTENSA_H
 
 #include "types.h"
 
@@ -53,4 +53,4 @@ xtensa_mmio_write32(uint32 addr, uint32 value)
   *(volatile uint32 *)addr = value;
 }
 
-#endif
+#endif // XV6_XTENSA_H

@@ -1,4 +1,5 @@
 ENTRY(_start)
+STACK_SIZE = 0x4000;
 
 MEMORY
 {
@@ -89,7 +90,7 @@ SECTIONS
   {
     . = ALIGN(16);
     _stack_bottom = .;
-    . = . + 0x4000;
+    . = . + STACK_SIZE;
     _stack_top = .;
   } > dram
 

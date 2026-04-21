@@ -34,6 +34,32 @@ make esp32s3
 make esp32s3-flash ESP_PORT=/dev/ttyACM0
 ```
 
+`make esp32s3` produces `build/esp32s3/kernel.bin`.  
+For ESP32-S3 hardware flashing, use the `.bin` image (not the `.elf`).
+
+## Debian arm64 host setup notes
+
+On Debian arm64, install baseline tooling:
+
+```bash
+sudo apt update
+sudo apt install -y build-essential make git python3 python3-pip python3-venv
+python3 -m pip install --user --upgrade esptool
+```
+
+Install the ESP32-S3 Xtensa toolchain using Espressif's installer (recommended on arm64):
+
+```bash
+mkdir -p ~/esp
+cd ~/esp
+git clone --depth 1 https://github.com/espressif/esp-idf.git
+cd esp-idf
+./install.sh esp32s3
+. ./export.sh
+```
+
+After this, `xtensa-esp32s3-elf-gcc` and `esptool.py` should be available for `make esp32s3` and `make esp32s3-flash`.
+
 ## Upstream sync process (repeatable)
 
 ```bash

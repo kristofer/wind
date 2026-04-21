@@ -2,6 +2,7 @@
 #include "kernel/xtensa/port.h"
 #include "kernel/xtensa/xtensa.h"
 
+// Phase-1 bring-up runs on a single core; interrupt masking is sufficient here.
 static volatile uint32 ticks;
 static uint32 tick_interval_cycles;
 
@@ -24,5 +25,10 @@ timer_init(uint32 cpu_hz, uint32 tick_hz)
 uint32
 timer_ticks(void)
 {
-  return ticks;
+  uint32 snapshot;
+
+  xtensa_disable_interrupts();
+  snapshot = ticks;
+  xtensa_enable_interrupts();
+  return snapshot;
 }

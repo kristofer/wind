@@ -25,4 +25,4 @@ void timer_init(uint32 cpu_hz, uint32 tick_hz);
 uint32 timer_ticks(void);
 void xtensa_timer_interrupt(void);
 
-#endif
+#endif // XV6_XTENSA_PORT_H
