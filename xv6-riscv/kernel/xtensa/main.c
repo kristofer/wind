@@ -44,24 +44,78 @@ proc100_fn(struct xtensa_proc *p)
 }
 
 /*
- * proc200: worker — logs getpid on first step, yields every 4 steps,
- * exits cleanly after 16 steps.
+ * user_init_fn — pseudo-user entry point, the xv6 init analogue.
+ *
+ * This is the target of proc200's wind_exec call.  It demonstrates the
+ * full Phase 5 chain:
+ *   exec -> allocate uregion -> write string via wind_write (uregion
+ *   offset resolved to kernel pointer inside sys_write) -> exit
+ *
+ * From the kernel's perspective this fn is just another kernel task, but
+ * structurally it mirrors what a user-mode init process would do: receive
+ * an empty address space after exec, populate it, issue write(1,...),
+ * and call exit(0).
+ */
+static void
+user_init_fn(struct xtensa_proc *p)
+{
+  p->fn_state++;
+  if(p->fn_state == 1){
+    int rc;
+    const char *msg = "hello from user_init\n";
+    uint32 i;
+    uint8 *buf;
+
+    rc = wind_proc_uregion_alloc(64);
+    if(rc != 0){
+      kprintf("wind: user_init uregion alloc FAILED\n");
+      wind_exit(1);
+      return;
+    }
+    buf = (uint8 *)wind_uaddr_to_kaddr(p, 0);
+    for(i = 0; msg[i] != '\0'; i++)
+      buf[i] = (uint8)msg[i];
+    buf[i] = '\0';
+
+    kprintf("wind: user_init step=1 calling wind_write\n");
+    wind_write(0);   /* write from uregion offset 0 */
+  }
+  if(p->fn_state >= 4){
+    kprintf("wind: user_init step=%u exiting\n", p->fn_state);
+    wind_proc_uregion_free();
+    wind_exit(0);
+    return;
+  }
+}
+
+/*
+ * proc200: worker — on step 1 verifies flat uregion read/write, then on
+ * step 2 execs into user_init_fn to exercise the pseudo-exec path.
  */
 static void
 proc200_fn(struct xtensa_proc *p)
 {
   p->fn_state++;
   if(p->fn_state == 1){
+    int rc;
+    uint8 *buf;
+    uint32 j;
     kprintf("wind: proc200 start pid=%d\n", wind_getpid());
+    rc = wind_proc_uregion_alloc(64);
+    if(rc == 0){
+      buf = (uint8 *)wind_uaddr_to_kaddr(p, 0);
+      for(j = 0; j < 64; j++)
+        buf[j] = (uint8)(j & 0xFFU);
+      kprintf("wind: proc200 uregion write check buf[0]=%u buf[63]=%u\n",
+              (unsigned)buf[0], (unsigned)buf[63]);
+    } else {
+      kprintf("wind: proc200 uregion alloc FAILED\n");
+    }
   }
-  if(p->fn_state >= 16){
-    kprintf("wind: proc200 step=%u exiting\n", p->fn_state);
-    wind_exit(0);
-    return;
-  }
-  if((p->fn_state % 4) == 0){
-    kprintf("wind: proc200 step=%u yield\n", p->fn_state);
-    wind_yield();
+  if(p->fn_state == 2){
+    kprintf("wind: proc200 step=2 exec -> user_init_fn\n");
+    wind_exec(user_init_fn);
+    return;  /* must return; scheduler calls user_init_fn next round */
   }
 }
 

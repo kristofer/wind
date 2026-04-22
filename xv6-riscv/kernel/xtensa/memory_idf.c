@@ -170,35 +170,74 @@ xtensa_memory_free_pages(void)
   return count;
 }
 
+/*
+ * Flat process memory model — user region allocator.
+ *
+ * xtensa_user_alloc(p, sz):
+ *   Allocates a contiguous sz-byte region from the IDF heap (PSRAM or
+ *   internal DRAM, whichever MALLOC_CAP_8BIT resolves first), then stores
+ *   its address in p->ubase and sz in p->usz.  Returns 0 on success, -1
+ *   on allocation failure.  p->ubase == 0 means no region is allocated.
+ *
+ * xtensa_user_free(p):
+ *   Frees the region and clears p->ubase/p->usz.  Safe to call when
+ *   p->ubase == 0 (no-op).  Called at reap time from wait_current.
+ *
+ * Translation: wind_uaddr_to_kaddr(p, ua) == (void *)(p->ubase + ua)
+ *   where ua is a byte offset into the proc's flat region.  This is the
+ *   only address-translation primitive needed for the flat memory model.
+ *   No page tables, no sv39 walks.
+ */
+int
+xtensa_user_alloc(struct xtensa_proc *p, uint32 sz)
+{
+  void *mem;
+
+  if(p == 0 || sz == 0)
+    return -1;
+  if(p->ubase != 0)
+    return -1;  /* already allocated */
+
+  mem = heap_caps_malloc(sz, MALLOC_CAP_8BIT);
+  if(mem == 0)
+    return -1;
+
+  memset(mem, 0, sz);
+  p->ubase = (uint32)mem;
+  p->usz   = sz;
+  kprintf("wind: uregion alloc pid=%d ubase=0x%x sz=%u\n", p->pid, p->ubase, p->usz);
+  return 0;
+}
+
+void
+xtensa_user_free(struct xtensa_proc *p)
+{
+  void *mem;
+
+  if(p == 0 || p->ubase == 0)
+    return;
+
+  mem = (void *)p->ubase;
+  kprintf("wind: uregion free pid=%d ubase=0x%x sz=%u\n", p->pid, p->ubase, p->usz);
+  p->ubase = 0;
+  p->usz   = 0;
+  heap_caps_free(mem);
+}
+
 #else
 
-void
-xtensa_memory_init(void)
+int
+xtensa_user_alloc(struct xtensa_proc *p, uint32 sz)
 {
-}
-
-void *
-xtensa_page_alloc(void)
-{
-  return 0;
+  (void)p;
+  (void)sz;
+  return -1;
 }
 
 void
-xtensa_page_free(void *page)
+xtensa_user_free(struct xtensa_proc *p)
 {
-  (void)page;
-}
-
-uint32
-xtensa_memory_total_pages(void)
-{
-  return 0;
-}
-
-uint32
-xtensa_memory_free_pages(void)
-{
-  return 0;
+  (void)p;
 }
 
 #endif

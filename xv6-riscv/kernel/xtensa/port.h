@@ -13,6 +13,8 @@
 #define WIND_SYSCALL_EXIT 5U
 #define WIND_SYSCALL_WAIT 6U
 #define WIND_SYSCALL_KILL 7U
+#define WIND_SYSCALL_WRITE 8U   /* write null-terminated string from uregion offset to console */
+#define WIND_SYSCALL_EXEC  9U   /* replace proc entry fn (pseudo-exec) */
 
 struct xtensa_trapframe {
   uint32 syscall_no;
@@ -37,6 +39,17 @@ enum xtensa_proc_state {
   XTENSA_PROC_ZOMBIE = 4,
 };
 
+/*
+ * Flat process memory model (replaces sv39 paging):
+ *   - No page tables; no virtual-to-physical translation hardware.
+ *   - Kernel runs at physical addresses throughout.
+ *   - Each proc owns a contiguous physical region [ubase, ubase+usz) for
+ *     its user-mode data/code. Allocated from IDF heap; freed at reap.
+ *   - Translation: wind_uaddr_to_kaddr(p, ua) == (void*)(p->ubase + ua)
+ *   - "User virtual address" is a byte offset into the proc's region.
+ */
+#define wind_uaddr_to_kaddr(p, ua)  ((void *)((p)->ubase + (ua)))
+
 struct xtensa_proc {
   int pid;
   enum xtensa_proc_state state;
@@ -50,6 +63,8 @@ struct xtensa_proc {
   int exit_code;
   int parent_pid;
   int killed;
+  uint32 ubase;  /* physical base of user region (0 = none); replaces pagetable_t */
+  uint32 usz;    /* size of user region in bytes */
 };
 
 void xtensa_context_switch(struct xtensa_context *old, struct xtensa_context *new);
@@ -61,14 +76,16 @@ void *xtensa_page_alloc(void);
 void xtensa_page_free(void *page);
 uint32 xtensa_memory_total_pages(void);
 uint32 xtensa_memory_free_pages(void);
+/* flat model: allocate/free a contiguous user region */
+int  xtensa_user_alloc(struct xtensa_proc *p, uint32 sz);
+void xtensa_user_free(struct xtensa_proc *p);
 void xtensa_sched_init(void);
 int xtensa_sched_create_proc(int pid);
 int xtensa_sched_create_proc_fn(int pid, void (*fn)(struct xtensa_proc *));
 int xtensa_sched_create_proc_fn_parent(int pid, int parent_pid, void (*fn)(struct xtensa_proc *));
 void xtensa_sched_run_current(void);
 int xtensa_sched_exit_current(int code);
-int xtensa_sched_wait_current(int *wstatus);
-void xtensa_sched_step(void);
+int xtensa_sched_wait_current(int *wstatus);int  xtensa_sched_exec_current(void (*fn)(struct xtensa_proc *));void xtensa_sched_step(void);
 int xtensa_sched_current_pid(void);
 struct xtensa_proc *xtensa_sched_current_proc(void);
 uint32 xtensa_sched_runnable_count(void);
@@ -91,6 +108,13 @@ void wind_exit(int code);
 int  wind_getpid(void);
 int  wind_wait(int *wstatus);
 int  wind_kill(int pid);
+/* flat model helpers — allocate/free the proc's user region from a fn */
+int  wind_proc_uregion_alloc(uint32 sz);   /* allocates p->ubase/p->usz; returns 0 ok */
+void wind_proc_uregion_free(void);         /* frees p->ubase/p->usz; called before exit */
+/* pseudo-exec: replace entry fn + reset fn_state + free uregion; caller must return */
+int  wind_exec(void (*fn)(struct xtensa_proc *));
+/* write null-terminated string from uregion byte offset to console */
+int  wind_write(uint32 uoffset);
 void consputc(int c);
 int kprintf(const char *fmt, ...);
 

@@ -4,6 +4,7 @@
 
 #ifdef WIND_ESP_IDF_APP
 #include "freertos/FreeRTOS.h"
+#include "esp_heap_caps.h"
 extern void kfree(void *);
 #endif
 
@@ -251,6 +252,43 @@ xtensa_sched_exit_current(int code)
   return 0;
 }
 
+/*
+ * xtensa_sched_exec_current — pseudo-exec.
+ *
+ * Replaces the calling proc's entry function with fn and resets fn_state
+ * to 0, mirroring xv6 exec() semantics at the kernel-task level.  The
+ * proc's user region (ubase/usz) is freed here so the new fn can allocate
+ * a fresh one on its first step.
+ *
+ * The caller MUST return immediately after this call; the scheduler will
+ * invoke fn(p) on the next scheduling round.  Does nothing and returns -1
+ * if fn is null or no proc is current.
+ */
+int
+xtensa_sched_exec_current(void (*fn)(struct xtensa_proc *))
+{
+  struct xtensa_proc *p;
+
+  if(fn == 0)
+    return -1;
+
+  sched_lock_enter();
+  if(current_index < 0){
+    sched_lock_exit();
+    return -1;
+  }
+  p = &procs[(uint32)current_index];
+  p->fn       = fn;
+  p->fn_state = 0;
+  sched_lock_exit();
+
+  /* free uregion outside the lock */
+  xtensa_user_free(p);
+
+  kprintf("wind: sched exec pid=%d -> new fn\n", p->pid);
+  return 0;
+}
+
 int
 xtensa_sched_wait_current(int *wstatus)
 {
@@ -261,12 +299,16 @@ xtensa_sched_wait_current(int *wstatus)
   int child_ppid;
   int have_children;
   void *kstack_to_free;
+  uint32 ubase_to_free;
+  uint32 usz_to_free;
 
   child_pid = -1;
   child_exit = 0;
   child_ppid = -1;
   have_children = 0;
   kstack_to_free = 0;
+  ubase_to_free = 0;
+  usz_to_free = 0;
 
   sched_lock_enter();
   if(current_index < 0){
@@ -288,6 +330,8 @@ xtensa_sched_wait_current(int *wstatus)
       child_exit = procs[i].exit_code;
       child_ppid = procs[i].parent_pid;
       kstack_to_free = procs[i].kstack;
+      ubase_to_free  = procs[i].ubase;
+      usz_to_free    = procs[i].usz;
       procs[i].pid = 0;
       procs[i].state = XTENSA_PROC_UNUSED;
       procs[i].wait_chan = 0;
@@ -298,6 +342,8 @@ xtensa_sched_wait_current(int *wstatus)
       procs[i].exit_code = 0;
       procs[i].parent_pid = -1;
       procs[i].killed = 0;
+      procs[i].ubase = 0;
+      procs[i].usz   = 0;
       __builtin_memset(&procs[i].context, 0, sizeof(procs[i].context));
       __builtin_memset(&procs[i].name, 0, sizeof(procs[i].name));
       if(zombie_count > 0)
@@ -311,9 +357,14 @@ xtensa_sched_wait_current(int *wstatus)
 #ifdef WIND_ESP_IDF_APP
     if(kstack_to_free != 0)
       kfree(kstack_to_free);
+    if(ubase_to_free != 0)
+      heap_caps_free((void *)ubase_to_free);
+    (void)usz_to_free;
 #else
     if(kstack_to_free != 0)
       xtensa_page_free(kstack_to_free);
+    (void)ubase_to_free;
+    (void)usz_to_free;
 #endif
     kprintf("wind: sched reap parent=%d child=%d status=%d zombie=%u\n",
             child_ppid,
