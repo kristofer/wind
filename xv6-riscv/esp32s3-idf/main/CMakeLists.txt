@@ -7,7 +7,6 @@ idf_component_register(
         ${WIND_ROOT}/kernel/xtensa/kalloc_wrap.c
         ${WIND_ROOT}/kernel/xtensa/main.c
         ${WIND_ROOT}/kernel/xtensa/memory_idf.c
-        ${WIND_ROOT}/kernel/xtensa/proc_kstack_service.c
         ${WIND_ROOT}/kernel/xtensa/scheduler_stub.c
         ${WIND_ROOT}/kernel/xtensa/timer.c
         ${WIND_ROOT}/kernel/xtensa/trap_syscall_stub.c

@@ -1,0 +1,25 @@
+Command: ninja all
+[1/16] Performing build step for 'bootloader'
+[1/1] cd /Users/kryounger/LocalProjects/wind/xv6-riscv/esp32s3-idf/build/bootloader && /Users/kryounger/.espressif/python_env/idf6.1_py3.13_env/bin/python /Users/kryounger/esp/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 bootloader 0x0 /Users/kryounger/LocalProjects/wind/xv6-riscv/esp32s3-idf/build/bootloader/bootloader.bin
+Bootloader binary size 0x5240 bytes. 0x2dc0 bytes (36%) free.
+[2/16] No install step for 'bootloader'
+[3/16] Completed 'bootloader'
+[4/16] Building C object esp-idf/main/CMakeFiles/__idf_main.dir/Users/kryounger/LocalProjects/wind/xv6-riscv/kernel/xtensa/kalloc_wrap.c.obj
+[5/16] Building C object esp-idf/main/CMakeFiles/__idf_main.dir/Users/kryounger/LocalProjects/wind/xv6-riscv/kernel/xtensa/trap_syscall_stub.c.obj
+[6/16] Building C object esp-idf/main/CMakeFiles/__idf_main.dir/Users/kryounger/LocalProjects/wind/xv6-riscv/kernel/xtensa/timer.c.obj
+[7/16] Building C object esp-idf/main/CMakeFiles/__idf_main.dir/Users/kryounger/LocalProjects/wind/xv6-riscv/kernel/xtensa/main.c.obj
+[8/16] Building C object esp-idf/main/CMakeFiles/__idf_main.dir/Users/kryounger/LocalProjects/wind/xv6-riscv/kernel/xtensa/console_idf.c.obj
+[9/16] Building C object esp-idf/main/CMakeFiles/__idf_main.dir/app_main.c.obj
+[10/16] Building C object esp-idf/main/CMakeFiles/__idf_main.dir/Users/kryounger/LocalProjects/wind/xv6-riscv/kernel/xtensa/memory_idf.c.obj
+[11/16] Building C object esp-idf/main/CMakeFiles/__idf_main.dir/Users/kryounger/LocalProjects/wind/xv6-riscv/kernel/xtensa/scheduler_stub.c.obj
+[12/16] Linking C static library esp-idf/main/libmain.a
+[13/16] Generating esp-idf/esp_system/ld/sections.ld
+[14/16] Linking CXX executable wind_esp32s3.elf
+[15/16] Generating binary image from built executable
+esptool v5.3.dev2
+Creating ESP32-S3 image...
+Merged 3 ELF sections.
+Successfully created ESP32-S3 image.
+Generated /Users/kryounger/LocalProjects/wind/xv6-riscv/esp32s3-idf/build/wind_esp32s3.bin
+[16/16] cd /Users/kryounger/LocalProjects/wind/xv6-riscv/esp32s3-idf/build && /Users/kryounger/.espressif/python_env/idf6.1_py3.13_env/bin/python /Users/kryounger/esp/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 partition --type app /Users/kryounger/LocalProjects/wind/xv6-riscv/esp32s3-idf/build/partition_table/partition-table.bin /Users/kryounger/LocalProjects/wind/xv6-riscv/esp32s3-idf/build/wind_esp32s3.bin
+wind_esp32s3.bin binary size 0x2ae00 bytes. Smallest app partition is 0x100000 bytes. 0xd5200 bytes (83%) free.

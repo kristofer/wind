@@ -1,31 +1,47 @@
 #include "kernel/types.h"
 #include "kernel/xtensa/port.h"
+#include <stdio.h>
 
 #ifdef WIND_ESP_IDF_APP
 #include "freertos/FreeRTOS.h"
+extern void kfree(void *);
 #endif
 
 #define WIND_SCHED_SLOTS 4U
+#define WIND_WAIT_CHAN_BASE 0x80000000U
 
-enum wind_proc_state {
-  WIND_PROC_UNUSED = 0,
-  WIND_PROC_RUNNABLE = 1,
-  WIND_PROC_RUNNING = 2,
-  WIND_PROC_SLEEPING = 3,
-};
-
-struct wind_sched_proc {
-  int pid;
-  enum wind_proc_state state;
-  uint32 wait_chan;
-};
-
-static struct wind_sched_proc procs[WIND_SCHED_SLOTS];
+static struct xtensa_proc procs[WIND_SCHED_SLOTS];
 static int current_index;
 static uint32 runnable_count;
 static uint32 sleeping_count;
+static uint32 zombie_count;
 static int last_scheduled_pid;
 static int preferred_wakeup_pid;
+
+static uint32
+wait_chan_for_parent(int parent_pid)
+{
+  return WIND_WAIT_CHAN_BASE | ((uint32)parent_pid & ~WIND_WAIT_CHAN_BASE);
+}
+
+static int
+sched_wakeup_chan_locked(uint32 chan)
+{
+  uint32 i;
+
+  for(i = 0; i < WIND_SCHED_SLOTS; i++){
+    if(procs[i].state == XTENSA_PROC_SLEEPING && procs[i].wait_chan == chan){
+      procs[i].state = XTENSA_PROC_RUNNABLE;
+      procs[i].wait_chan = 0;
+      if(sleeping_count > 0)
+        sleeping_count--;
+      runnable_count++;
+      preferred_wakeup_pid = procs[i].pid;
+      return 0;
+    }
+  }
+  return -1;
+}
 
 #ifdef WIND_ESP_IDF_APP
 static portMUX_TYPE sched_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -58,16 +74,24 @@ xtensa_sched_init(void)
 {
   uint32 i;
 
-  xtensa_proc_service_init();
   sched_lock_enter();
   for(i = 0; i < WIND_SCHED_SLOTS; i++){
     procs[i].pid = 0;
-    procs[i].state = WIND_PROC_UNUSED;
+    procs[i].state = XTENSA_PROC_UNUSED;
     procs[i].wait_chan = 0;
+    procs[i].kstack = 0;
+    procs[i].trapframe = 0;
+    procs[i].fn = 0;
+    procs[i].fn_state = 0;
+    procs[i].exit_code = 0;
+    procs[i].parent_pid = -1;
+    __builtin_memset(&procs[i].context, 0, sizeof(procs[i].context));
+    __builtin_memset(&procs[i].name, 0, sizeof(procs[i].name));
   }
   current_index = -1;
   runnable_count = 0;
   sleeping_count = 0;
+  zombie_count = 0;
   last_scheduled_pid = -1;
   preferred_wakeup_pid = -1;
   sched_lock_exit();
@@ -77,18 +101,32 @@ int
 xtensa_sched_create_proc(int pid)
 {
   uint32 i;
+  void *kstack;
+  struct xtensa_trapframe *tf;
 
   sched_lock_enter();
   for(i = 0; i < WIND_SCHED_SLOTS; i++){
-    if(procs[i].state == WIND_PROC_UNUSED){
-      if(xtensa_proc_service_create(pid) != 0)
+    if(procs[i].state == XTENSA_PROC_UNUSED){
+      kstack = xtensa_page_alloc();
+      if(kstack == 0)
       {
         sched_lock_exit();
         return -1;
       }
+      tf = (struct xtensa_trapframe *)kstack;
+      __builtin_memset(tf, 0, sizeof(*tf));
+      
       procs[i].pid = pid;
-      procs[i].state = WIND_PROC_RUNNABLE;
+      procs[i].state = XTENSA_PROC_RUNNABLE;
       procs[i].wait_chan = 0;
+      procs[i].kstack = kstack;
+      procs[i].trapframe = tf;
+      procs[i].fn = 0;
+      procs[i].fn_state = 0;
+      procs[i].exit_code = 0;
+      procs[i].parent_pid = -1;
+      __builtin_memset(&procs[i].context, 0, sizeof(procs[i].context));
+      snprintf(procs[i].name, sizeof(procs[i].name), "proc-%d", pid);
       runnable_count++;
       sched_lock_exit();
       return 0;
@@ -97,6 +135,179 @@ xtensa_sched_create_proc(int pid)
 
   sched_lock_exit();
   return -1;
+}
+
+int
+xtensa_sched_create_proc_fn(int pid, void (*fn)(struct xtensa_proc *))
+{
+  return xtensa_sched_create_proc_fn_parent(pid, -1, fn);
+}
+
+int
+xtensa_sched_create_proc_fn_parent(int pid, int parent_pid, void (*fn)(struct xtensa_proc *))
+{
+  int ret = xtensa_sched_create_proc(pid);
+  if(ret != 0)
+    return ret;
+
+  sched_lock_enter();
+  {
+    uint32 i;
+    for(i = 0; i < WIND_SCHED_SLOTS; i++){
+      if(procs[i].pid == pid){
+        procs[i].fn = fn;
+        procs[i].parent_pid = parent_pid;
+        break;
+      }
+    }
+  }
+  sched_lock_exit();
+  return 0;
+}
+
+void
+xtensa_sched_run_current(void)
+{
+  struct xtensa_proc *p;
+  void (*fn)(struct xtensa_proc *);
+
+  sched_lock_enter();
+  if(current_index < 0){
+    sched_lock_exit();
+    return;
+  }
+  p = &procs[(uint32)current_index];
+  fn = p->fn;
+  sched_lock_exit();
+
+  if(fn != 0)
+    fn(p);
+}
+
+int
+xtensa_sched_exit_current(int code)
+{
+  int exiting_pid;
+  int parent_pid;
+  uint32 wake_chan;
+
+  sched_lock_enter();
+  if(current_index < 0){
+    sched_lock_exit();
+    return -1;
+  }
+  exiting_pid = procs[(uint32)current_index].pid;
+  parent_pid = procs[(uint32)current_index].parent_pid;
+  procs[(uint32)current_index].state = XTENSA_PROC_ZOMBIE;
+  procs[(uint32)current_index].wait_chan = 0;
+  procs[(uint32)current_index].fn = 0;
+  procs[(uint32)current_index].exit_code = code;
+  if(runnable_count > 0)
+    runnable_count--;
+  zombie_count++;
+  current_index = -1;
+  if(parent_pid > 0){
+    wake_chan = wait_chan_for_parent(parent_pid);
+    (void)sched_wakeup_chan_locked(wake_chan);
+  }
+  sched_lock_exit();
+
+  kprintf("wind: sched zombie pid=%d ppid=%d exit=%d zombie=%u\n",
+          exiting_pid,
+          parent_pid,
+          code,
+          xtensa_sched_zombie_count());
+
+  return 0;
+}
+
+int
+xtensa_sched_wait_current(int *wstatus)
+{
+  uint32 i;
+  int parent_pid;
+  int child_pid;
+  int child_exit;
+  int child_ppid;
+  int have_children;
+  void *kstack_to_free;
+
+  child_pid = -1;
+  child_exit = 0;
+  child_ppid = -1;
+  have_children = 0;
+  kstack_to_free = 0;
+
+  sched_lock_enter();
+  if(current_index < 0){
+    sched_lock_exit();
+    return -1;
+  }
+  parent_pid = procs[(uint32)current_index].pid;
+
+  for(i = 0; i < WIND_SCHED_SLOTS; i++){
+    if(procs[i].state == XTENSA_PROC_UNUSED)
+      continue;
+    if(procs[i].parent_pid != parent_pid)
+      continue;
+
+    have_children = 1;
+    if(procs[i].state == XTENSA_PROC_ZOMBIE){
+      child_pid = procs[i].pid;
+      child_exit = procs[i].exit_code;
+      child_ppid = procs[i].parent_pid;
+      kstack_to_free = procs[i].kstack;
+      procs[i].pid = 0;
+      procs[i].state = XTENSA_PROC_UNUSED;
+      procs[i].wait_chan = 0;
+      procs[i].kstack = 0;
+      procs[i].trapframe = 0;
+      procs[i].fn = 0;
+      procs[i].fn_state = 0;
+      procs[i].exit_code = 0;
+      procs[i].parent_pid = -1;
+      __builtin_memset(&procs[i].context, 0, sizeof(procs[i].context));
+      __builtin_memset(&procs[i].name, 0, sizeof(procs[i].name));
+      if(zombie_count > 0)
+        zombie_count--;
+      break;
+    }
+  }
+
+  if(child_pid >= 0){
+    sched_lock_exit();
+#ifdef WIND_ESP_IDF_APP
+    if(kstack_to_free != 0)
+      kfree(kstack_to_free);
+#else
+    if(kstack_to_free != 0)
+      xtensa_page_free(kstack_to_free);
+#endif
+    kprintf("wind: sched reap parent=%d child=%d status=%d zombie=%u\n",
+            child_ppid,
+            child_pid,
+            child_exit,
+            xtensa_sched_zombie_count());
+    if(wstatus != 0)
+      *wstatus = child_exit;
+    return child_pid;
+  }
+
+  if(!have_children){
+    sched_lock_exit();
+    return -1;
+  }
+
+  if(procs[(uint32)current_index].state == XTENSA_PROC_RUNNING){
+    procs[(uint32)current_index].state = XTENSA_PROC_SLEEPING;
+    procs[(uint32)current_index].wait_chan = wait_chan_for_parent(parent_pid);
+    if(runnable_count > 0)
+      runnable_count--;
+    sleeping_count++;
+    current_index = -1;
+  }
+  sched_lock_exit();
+  return -2;
 }
 
 void
@@ -115,13 +326,13 @@ xtensa_sched_step(void)
     return;
   }
 
-  if(current_index >= 0 && procs[(uint32)current_index].state == WIND_PROC_RUNNING)
-    procs[(uint32)current_index].state = WIND_PROC_RUNNABLE;
+  if(current_index >= 0 && procs[(uint32)current_index].state == XTENSA_PROC_RUNNING)
+    procs[(uint32)current_index].state = XTENSA_PROC_RUNNABLE;
 
   if(preferred_wakeup_pid >= 0){
     for(i = 0; i < WIND_SCHED_SLOTS; i++){
-      if(procs[i].pid == preferred_wakeup_pid && procs[i].state == WIND_PROC_RUNNABLE){
-        procs[i].state = WIND_PROC_RUNNING;
+      if(procs[i].pid == preferred_wakeup_pid && procs[i].state == XTENSA_PROC_RUNNABLE){
+        procs[i].state = XTENSA_PROC_RUNNING;
         current_index = (int)i;
         last_scheduled_pid = procs[i].pid;
         preferred_wakeup_pid = -1;
@@ -136,14 +347,14 @@ xtensa_sched_step(void)
   fallback_index = -1;
   for(scanned = 0; scanned < WIND_SCHED_SLOTS; scanned++){
     idx %= WIND_SCHED_SLOTS;
-    if(procs[idx].state == WIND_PROC_RUNNABLE){
+    if(procs[idx].state == XTENSA_PROC_RUNNABLE){
       if(fallback_index < 0)
         fallback_index = (int)idx;
       if(runnable_count > 1 && procs[idx].pid == last_scheduled_pid){
         idx++;
         continue;
       }
-      procs[idx].state = WIND_PROC_RUNNING;
+      procs[idx].state = XTENSA_PROC_RUNNING;
       current_index = (int)idx;
       last_scheduled_pid = procs[idx].pid;
       sched_lock_exit();
@@ -153,7 +364,7 @@ xtensa_sched_step(void)
   }
 
   if(fallback_index >= 0){
-    procs[(uint32)fallback_index].state = WIND_PROC_RUNNING;
+    procs[(uint32)fallback_index].state = XTENSA_PROC_RUNNING;
     current_index = fallback_index;
     last_scheduled_pid = procs[(uint32)fallback_index].pid;
     sched_lock_exit();
@@ -181,6 +392,23 @@ xtensa_sched_current_pid(void)
   return pid;
 }
 
+struct xtensa_proc *
+xtensa_sched_current_proc(void)
+{
+  struct xtensa_proc *p;
+
+  sched_lock_enter();
+  if(current_index < 0)
+  {
+    sched_lock_exit();
+    return 0;
+  }
+
+  p = &procs[(uint32)current_index];
+  sched_lock_exit();
+  return p;
+}
+
 uint32
 xtensa_sched_runnable_count(void)
 {
@@ -203,6 +431,17 @@ xtensa_sched_sleeping_count(void)
   return count;
 }
 
+uint32
+xtensa_sched_zombie_count(void)
+{
+  uint32 count;
+
+  sched_lock_enter();
+  count = zombie_count;
+  sched_lock_exit();
+  return count;
+}
+
 int
 xtensa_sched_sleep_current(void)
 {
@@ -219,13 +458,13 @@ xtensa_sched_sleep_current_on_chan(uint32 chan)
     sched_lock_exit();
     return -1;
   }
-  if(procs[(uint32)current_index].state != WIND_PROC_RUNNING){
+  if(procs[(uint32)current_index].state != XTENSA_PROC_RUNNING){
     sched_lock_exit();
     return -1;
   }
 
   pid = procs[(uint32)current_index].pid;
-  procs[(uint32)current_index].state = WIND_PROC_SLEEPING;
+  procs[(uint32)current_index].state = XTENSA_PROC_SLEEPING;
   procs[(uint32)current_index].wait_chan = chan;
   current_index = -1;
   sleeping_count++;
@@ -242,8 +481,8 @@ xtensa_sched_wakeup_pid(int pid)
 
   sched_lock_enter();
   for(i = 0; i < WIND_SCHED_SLOTS; i++){
-    if(procs[i].pid == pid && procs[i].state == WIND_PROC_SLEEPING){
-      procs[i].state = WIND_PROC_RUNNABLE;
+    if(procs[i].pid == pid && procs[i].state == XTENSA_PROC_SLEEPING){
+      procs[i].state = XTENSA_PROC_RUNNABLE;
       procs[i].wait_chan = 0;
       sleeping_count--;
       runnable_count++;
@@ -259,23 +498,12 @@ xtensa_sched_wakeup_pid(int pid)
 int
 xtensa_sched_wakeup_chan(uint32 chan)
 {
-  uint32 i;
-  int woke = 0;
+  int ret;
 
   sched_lock_enter();
-  for(i = 0; i < WIND_SCHED_SLOTS; i++){
-    if(procs[i].state == WIND_PROC_SLEEPING && procs[i].wait_chan == chan){
-      procs[i].state = WIND_PROC_RUNNABLE;
-      procs[i].wait_chan = 0;
-      sleeping_count--;
-      runnable_count++;
-      preferred_wakeup_pid = procs[i].pid;
-      woke = 1;
-      break;
-    }
-  }
+  ret = sched_wakeup_chan_locked(chan);
   sched_lock_exit();
-  return woke ? 0 : -1;
+  return ret;
 }
 
 void
@@ -285,11 +513,14 @@ xtensa_sched_dump(void)
   int pid_snapshot[WIND_SCHED_SLOTS];
   int state_snapshot[WIND_SCHED_SLOTS];
   uint32 chan_snapshot[WIND_SCHED_SLOTS];
+  int parent_snapshot[WIND_SCHED_SLOTS];
+  int exit_snapshot[WIND_SCHED_SLOTS];
   int current_snapshot;
   int last_pid_snapshot;
   int preferred_pid_snapshot;
   uint32 runnable_snapshot;
   uint32 sleeping_snapshot;
+  uint32 zombie_snapshot;
   const char *state_name;
 
   sched_lock_enter();
@@ -297,45 +528,54 @@ xtensa_sched_dump(void)
     pid_snapshot[i] = procs[i].pid;
     state_snapshot[i] = (int)procs[i].state;
     chan_snapshot[i] = procs[i].wait_chan;
+    parent_snapshot[i] = procs[i].parent_pid;
+    exit_snapshot[i] = procs[i].exit_code;
   }
   current_snapshot = current_index;
   last_pid_snapshot = last_scheduled_pid;
-    preferred_pid_snapshot = preferred_wakeup_pid;
+  preferred_pid_snapshot = preferred_wakeup_pid;
   runnable_snapshot = runnable_count;
   sleeping_snapshot = sleeping_count;
+  zombie_snapshot = zombie_count;
   sched_lock_exit();
 
-    kprintf("wind: sched dump begin current_idx=%d last_pid=%d preferred_wakeup_pid=%d runnable=%u sleeping=%u\n",
+  kprintf("wind: sched dump begin current_idx=%d last_pid=%d preferred_wakeup_pid=%d runnable=%u sleeping=%u zombie=%u\n",
           current_snapshot,
           last_pid_snapshot,
-      preferred_pid_snapshot,
+          preferred_pid_snapshot,
           runnable_snapshot,
-          sleeping_snapshot);
+          sleeping_snapshot,
+          zombie_snapshot);
 
   for(i = 0; i < WIND_SCHED_SLOTS; i++){
     switch(state_snapshot[i]){
-    case WIND_PROC_UNUSED:
+    case XTENSA_PROC_UNUSED:
       state_name = "UNUSED";
       break;
-    case WIND_PROC_RUNNABLE:
+    case XTENSA_PROC_RUNNABLE:
       state_name = "RUNNABLE";
       break;
-    case WIND_PROC_RUNNING:
+    case XTENSA_PROC_RUNNING:
       state_name = "RUNNING";
       break;
-    case WIND_PROC_SLEEPING:
+    case XTENSA_PROC_SLEEPING:
       state_name = "SLEEPING";
+      break;
+    case XTENSA_PROC_ZOMBIE:
+      state_name = "ZOMBIE";
       break;
     default:
       state_name = "UNKNOWN";
       break;
     }
 
-    kprintf("wind: sched slot=%u pid=%d state=%s chan=%u\n",
+    kprintf("wind: sched slot=%u pid=%d ppid=%d state=%s chan=%u exit=%d\n",
             i,
             pid_snapshot[i],
+            parent_snapshot[i],
             state_name,
-            chan_snapshot[i]);
+            chan_snapshot[i],
+            exit_snapshot[i]);
   }
   kprintf("wind: sched dump end\n");
 }
