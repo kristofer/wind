@@ -5,12 +5,14 @@
 
 #define XTENSA_CPU_HZ 80000000U
 #define XTENSA_TICK_HZ 1000U
+#define WIND_INIT_PID 100
 #define WIND_SYSCALL_YIELD 1U
 #define WIND_SYSCALL_SLEEP_ON_CHAN 2U
 #define WIND_SYSCALL_WAKEUP_CHAN 3U
 #define WIND_SYSCALL_GETPID 4U
 #define WIND_SYSCALL_EXIT 5U
 #define WIND_SYSCALL_WAIT 6U
+#define WIND_SYSCALL_KILL 7U
 
 struct xtensa_trapframe {
   uint32 syscall_no;
@@ -47,6 +49,7 @@ struct xtensa_proc {
   uint32 fn_state;                   /* proc-owned continuation counter */
   int exit_code;
   int parent_pid;
+  int killed;
 };
 
 void xtensa_context_switch(struct xtensa_context *old, struct xtensa_context *new);
@@ -75,6 +78,7 @@ int xtensa_sched_sleep_current(void);
 int xtensa_sched_wakeup_pid(int pid);
 int xtensa_sched_sleep_current_on_chan(uint32 chan);
 int xtensa_sched_wakeup_chan(uint32 chan);
+int xtensa_sched_kill_pid(int pid);
 void xtensa_sched_dump(void);
 void xtensa_trap_init(void);
 void xtensa_trap_handle_syscall(struct xtensa_trapframe *tf);
@@ -86,6 +90,7 @@ void wind_wakeup_chan(uint32 chan);
 void wind_exit(int code);
 int  wind_getpid(void);
 int  wind_wait(int *wstatus);
+int  wind_kill(int pid);
 void consputc(int c);
 int kprintf(const char *fmt, ...);
 

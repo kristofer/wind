@@ -22,6 +22,7 @@ static int sched_service_ok;
 
 /*
  * proc100: parent/waiter — waits for zombie children and reaps them.
+ * If killed flag is set, wait returns -1 immediately; log and yield.
  */
 static void
 proc100_fn(struct xtensa_proc *p)
@@ -31,8 +32,12 @@ proc100_fn(struct xtensa_proc *p)
 
   p->fn_state++;
   child = wind_wait(&status);
-  if(child >= 0)
+  if(child >= 0){
     kprintf("wind: proc100 wait reaped child=%d status=%d\n", child, status);
+  } else if(p->killed){
+    kprintf("wind: proc100 wait killed return step=%u\n", p->fn_state);
+    wind_yield();
+  }
 
   if((p->fn_state % 4U) == 0U)
     wind_yield();
@@ -88,6 +93,25 @@ proc202_fn(struct xtensa_proc *p)
   }
 }
 
+/*
+ * proc203: killer — sends kill to proc100 (the waiter/parent) at step 35
+ * to exercise kill-safe wait behavior. Exits itself after step 40.
+ */
+static void
+proc203_fn(struct xtensa_proc *p)
+{
+  p->fn_state++;
+  if(p->fn_state == 8){
+    kprintf("wind: proc203 step=%u killing proc100\n", p->fn_state);
+    wind_kill(100);
+  }
+  if(p->fn_state >= 12){
+    kprintf("wind: proc203 step=%u exiting\n", p->fn_state);
+    wind_exit(0);
+    return;
+  }
+}
+
 static void
 xtensa_allocator_selftest(void)
 {
@@ -136,8 +160,7 @@ xtensa_sched_service_bootstrap(void)
     { 100, -1, proc100_fn },
     { 200, 100, proc200_fn },
     { 201, 100, proc201_fn },
-    { 202, 100, proc202_fn },
-  };
+    { 202, 100, proc202_fn },    { 203, 100, proc203_fn },  };
   uint32 i;
 
   sched_service_ok = 1;

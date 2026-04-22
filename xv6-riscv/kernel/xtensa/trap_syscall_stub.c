@@ -47,8 +47,18 @@ xtensa_sys_wait(struct xtensa_trapframe *tf)
 {
   int wstatus = 0;
   int child_pid = xtensa_sched_wait_current(&wstatus);
+  /* internal -2 means the caller was put to sleep waiting for a child */
+  if(child_pid == -2)
+    child_pid = -1;
   tf->arg0 = (uint32)wstatus;
   return child_pid;
+}
+
+static int
+xtensa_sys_kill(struct xtensa_trapframe *tf)
+{
+  int pid = (int)tf->arg0;
+  return xtensa_sched_kill_pid(pid);
 }
 
 void
@@ -92,6 +102,10 @@ xtensa_trap_handle_syscall(struct xtensa_trapframe *tf)
     tf->retval = xtensa_sys_wait(tf);
     if((int)tf->retval >= 0)
       kprintf("wind: syscall wait child=%d status=%d count=%u\n", tf->retval, (int)tf->arg0, syscall_count);
+    break;
+  case WIND_SYSCALL_KILL:
+    tf->retval = xtensa_sys_kill(tf);
+    kprintf("wind: syscall kill(pid=%d) ret=%d count=%u\n", (int)tf->arg0, (int)tf->retval, syscall_count);
     break;
   default:
     tf->retval = -1;
@@ -165,4 +179,15 @@ wind_wait(int *wstatus)
   if(wstatus != 0)
     *wstatus = (int)tf.arg0;
   return tf.retval;
+}
+
+int
+wind_kill(int pid)
+{
+  struct xtensa_trapframe tf;
+  tf.syscall_no = WIND_SYSCALL_KILL;
+  tf.arg0 = (uint32)pid;
+  tf.retval = -1;
+  xtensa_trap_handle_syscall(&tf);
+  return (int)tf.retval;
 }
