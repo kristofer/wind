@@ -1,6 +1,10 @@
 #include "kernel/types.h"
 #include "kernel/xtensa/xtensa.h"
 
+#ifdef WIND_ESP_IDF_APP
+#include <stdio.h>
+#endif
+
 #define UART0_BASE 0x60000000U
 #define UART_FIFO_REG (UART0_BASE + 0x0U)
 #define UART_STATUS_REG (UART0_BASE + 0x1CU)
@@ -24,10 +28,15 @@ uart_init(void)
 void
 uart_putc(char c)
 {
+#ifdef WIND_ESP_IDF_APP
+  putchar((int)(unsigned char)c);
+  fflush(stdout);
+#else
   while(uart_txfifo_full())
     ;
 
   xtensa_mmio_write32(UART_FIFO_REG, (uint32)(uchar)c);
+#endif
 }
 
 void

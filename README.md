@@ -163,25 +163,50 @@ After flashing, you can either use the helper above or open a raw serial monitor
 screen /dev/cu.usbmodem1101 115200
 ```
 
-You should see the phase-1 bring-up UART banner/log output from `kernel/xtensa`, followed by a periodic `wind: app_main alive` message from the ESP-IDF wrapper task.
+You should see the phase-1 bring-up log output from `kernel/xtensa`, followed by periodic tick messages that include reduced-process scheduler state (current pid, runnable/sleeping counts), periodic sleep/wakeup transition logs, and allocator free-page counts.
+
+### 7.1) Optional allocator negative self-test (intentional panic)
+
+For allocator hardening verification, there is an opt-in negative test that intentionally double-frees one page and should trigger allocator panic.
+
+Enable it:
+
+```bash
+cd xv6-riscv
+idf.py -C esp32s3-idf menuconfig
+```
+
+Then enable:
+
+- `wind ESP32-S3 Options` -> `Enable allocator negative self-test (intentional double-free)`
+- optional: `wind ESP32-S3 Options` -> `Enable allocator negative self-test (intentional invalid free)`
+
+Build/flash/monitor again. Expected behavior:
+
+- normal allocator self-test prints PASS
+- proc service self-test prints PASS
+- negative test announces start
+- allocator panic message appears after second `kfree` (double-free mode) or immediately on out-of-pool `kfree` (invalid-free mode)
+
+Disable this option for normal bring-up and tick-loop work.
 
 ### 8) Typical macOS troubleshooting
 
 - `kernel/xtensa/main.c: fatal error: types.h: No such file or directory`:
-	use the latest repository version where Xtensa sources include `kernel/types.h`.
-	If you are carrying local changes, update these includes in `kernel/xtensa/*.c` and `kernel/xtensa/*.h` from `types.h` to `kernel/types.h`.
+  use the latest repository version where Xtensa sources include `kernel/types.h`.
+  If you are carrying local changes, update these includes in `kernel/xtensa/*.c` and `kernel/xtensa/*.h` from `types.h` to `kernel/types.h`.
 - `ERROR: Source ~/esp/esp-idf/export.sh before running ESP32-S3 targets`:
-	source the ESP-IDF environment in the same shell before running `make esp32s3`, `make esp32s3-flash`, or `make esp32s3-monitor`.
+  source the ESP-IDF environment in the same shell before running `make esp32s3`, `make esp32s3-flash`, or `make esp32s3-monitor`.
 - Boot logs mention missing or invalid app partitions:
-	rebuild and flash using the repo-local ESP-IDF flow above instead of flashing a raw `kernel.bin` directly.
+  rebuild and flash using the repo-local ESP-IDF flow above instead of flashing a raw `kernel.bin` directly.
 - `Error: Couldn't find a riscv64 version of GCC/binutils`:
-	install/add a RISC-V toolchain and retry, or set `TOOLPREFIX=...` explicitly.
+  install/add a RISC-V toolchain and retry, or set `TOOLPREFIX=...` explicitly.
 - `ERROR: Need qemu version >= 7.2`:
-	upgrade QEMU via Homebrew.
+  upgrade QEMU via Homebrew.
 - `xtensa-esp32s3-elf-gcc: command not found`:
-	rerun `. ~/esp/esp-idf/export.sh` in your current shell.
+  rerun `. ~/esp/esp-idf/export.sh` in your current shell.
 - `esptool.py` cannot connect:
-	confirm `ESP_PORT`, cable/data support, and board bootloader mode.
+  confirm `ESP_PORT`, cable/data support, and board bootloader mode.
 
 ## ESP32-S3 phase 1 bring-up artifacts
 

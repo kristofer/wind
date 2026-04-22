@@ -211,18 +211,23 @@ ESP_IDF_TARGET ?= esp32s3
 ESP_PORT ?= /dev/ttyACM0
 ESP_BAUD ?= 460800
 
-.PHONY: esp32s3 esp32s3-bin esp32s3-clean esp32s3-flash esp32s3-merge-bin esp32s3-monitor
+.PHONY: esp32s3 esp32s3-bin esp32s3-clean esp32s3-flash esp32s3-merge-bin esp32s3-monitor esp32s3-setup
+
+esp32s3-setup:
+	@test -n "$$IDF_PATH" || (echo "ERROR: Source ~/esp/esp-idf/export.sh before running ESP32-S3 targets"; exit 1)
+	$(ESP_IDF_PY) -C $(ESP_IDF_PROJECT) set-target $(ESP_IDF_TARGET)
 
 esp32s3:
 	@test -n "$$IDF_PATH" || (echo "ERROR: Source ~/esp/esp-idf/export.sh before running ESP32-S3 targets"; exit 1)
-	$(ESP_IDF_PY) -C $(ESP_IDF_PROJECT) set-target $(ESP_IDF_TARGET)
+	@if [ ! -f "$(ESP_IDF_PROJECT)/sdkconfig" ]; then \
+		$(ESP_IDF_PY) -C $(ESP_IDF_PROJECT) set-target $(ESP_IDF_TARGET); \
+	fi
 	$(ESP_IDF_PY) -C $(ESP_IDF_PROJECT) build
 
 esp32s3-bin: esp32s3
 
 esp32s3-flash:
 	@test -n "$$IDF_PATH" || (echo "ERROR: Source ~/esp/esp-idf/export.sh before running ESP32-S3 targets"; exit 1)
-	$(ESP_IDF_PY) -C $(ESP_IDF_PROJECT) set-target $(ESP_IDF_TARGET)
 	$(ESP_IDF_PY) -C $(ESP_IDF_PROJECT) -p $(ESP_PORT) -b $(ESP_BAUD) flash
 
 esp32s3-monitor:
@@ -231,7 +236,6 @@ esp32s3-monitor:
 
 esp32s3-merge-bin:
 	@test -n "$$IDF_PATH" || (echo "ERROR: Source ~/esp/esp-idf/export.sh before running ESP32-S3 targets"; exit 1)
-	$(ESP_IDF_PY) -C $(ESP_IDF_PROJECT) set-target $(ESP_IDF_TARGET)
 	$(ESP_IDF_PY) -C $(ESP_IDF_PROJECT) merge-bin
 
 esp32s3-clean:

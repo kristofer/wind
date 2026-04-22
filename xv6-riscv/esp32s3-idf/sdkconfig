@@ -962,6 +962,13 @@ CONFIG_PARTITION_TABLE_MD5=y
 # end of Partition Table
 
 #
+# wind ESP32-S3 Options
+#
+# CONFIG_WIND_ALLOC_NEGATIVE_SELFTEST is not set
+# CONFIG_WIND_ALLOC_NEGATIVE_INVALID_FREE_SELFTEST is not set
+# end of wind ESP32-S3 Options
+
+#
 # Compiler options
 #
 # default:

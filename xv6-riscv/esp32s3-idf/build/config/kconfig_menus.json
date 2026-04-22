@@ -6191,6 +6191,34 @@
     {
         "children": [
             {
+                "children": [],
+                "depends_on": null,
+                "help": "If enabled, startup runs an intentional double-free after allocator\nself-test PASS, and should trigger allocator panic. Keep disabled for\nnormal development.",
+                "id": "WIND_ALLOC_NEGATIVE_SELFTEST",
+                "name": "WIND_ALLOC_NEGATIVE_SELFTEST",
+                "range": null,
+                "title": "Enable allocator negative self-test (intentional double-free)",
+                "type": "bool"
+            },
+            {
+                "children": [],
+                "depends_on": null,
+                "help": "If enabled, startup calls kfree on an out-of-pool pointer after\npositive self-tests, and should trigger allocator panic. Keep disabled\nfor normal development.",
+                "id": "WIND_ALLOC_NEGATIVE_INVALID_FREE_SELFTEST",
+                "name": "WIND_ALLOC_NEGATIVE_INVALID_FREE_SELFTEST",
+                "range": null,
+                "title": "Enable allocator negative self-test (intentional invalid free)",
+                "type": "bool"
+            }
+        ],
+        "depends_on": null,
+        "id": "wind-esp32-s3-options-Users-kryounger-LocalProjects-wind-xv6-riscv-esp32s3-idf-main-Kconfig.projbuild-1",
+        "title": "wind ESP32-S3 Options",
+        "type": "menu"
+    },
+    {
+        "children": [
+            {
                 "children": [
                     {
                         "children": [],
