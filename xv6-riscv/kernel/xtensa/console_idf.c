@@ -95,7 +95,10 @@ console_input_ingest_char(int c)
     return;
   }
 
-  /* e/r are monotonic counters; this prevents ring overwrite of unread bytes. */
+  /*
+   * r/w/e are monotonic counters with r <= w <= e.
+   * This prevents ring overwrite of unread or uncommitted bytes.
+   */
   if((console_input.e - console_input.r) >= CONSOLE_INPUT_BUFSZ)
     return;
 
@@ -140,13 +143,6 @@ xtensa_console_read(char *dst, uint32 maxlen)
     if(c == '\n')
       break;
   }
-
-  /*
-   * Once all committed bytes are consumed, collapse edit to write so the next
-   * line starts at the same logical point.
-   */
-  if(console_input.r == console_input.w)
-    console_input.e = console_input.w;
 
   return (int)n;
 }
