@@ -16,7 +16,6 @@ kernel/kernel
 user/usys.S
 .gdbinit
 TAGS
-/build/
+build/
 
-/xv6-riscv/esp32s3-idf/build/*
-/build/
+/xv6-riscv/esp32s3-idf/build/
