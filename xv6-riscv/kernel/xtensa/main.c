@@ -18,6 +18,7 @@ static void *selftest_pages[WIND_SELFTEST_MAX_PAGES];
 static uint32 selftest_allocated;
 static int selftest_ok;
 static int sched_service_ok;
+#define WIND_ROMFS_IO_BUFSZ 64U
 
 /* ---- kernel proc entry functions ---- */
 
@@ -120,6 +121,10 @@ user_echo_fn(struct xtensa_proc *p)
       char *out = (char *)wind_uaddr_to_kaddr(p, 0);
       const char *args = wind_cmd_args(p);
       uint32 i = 0;
+      if(p->usz < 2U){
+        wind_exit(1);
+        return;
+      }
       while(args[i] != '\0' && i + 2U < p->usz){
         out[i] = args[i];
         i++;
@@ -153,13 +158,14 @@ user_cat_fn(struct xtensa_proc *p)
       int fd;
       int n;
       char *out = (char *)wind_uaddr_to_kaddr(p, 0);
+      uint32 max_read = (p->usz > 0U) ? (p->usz - 1U) : 0U;
 
       if(wind_cmd_arg0(p, path, sizeof(path)) != 0)
         snprintf(path, sizeof(path), "/etc/motd");
       if((fd = xtensa_romfs_open(path)) < 0)
         wind_write_cstr(p, 0, "cat: file not found\n");
       else{
-        while((n = xtensa_romfs_read(fd, out, p->usz - 1U)) > 0){
+        while(max_read > 0U && (n = xtensa_romfs_read(fd, out, max_read)) > 0){
           out[(uint32)n] = '\0';
           (void)wind_write(0);
         }
@@ -184,7 +190,7 @@ user_wc_fn(struct xtensa_proc *p)
       uint32 bytes = 0;
       int in_word = 0;
       char *buf = (char *)wind_uaddr_to_kaddr(p, 0);
-      char *out = (char *)wind_uaddr_to_kaddr(p, 64);
+      char *out = (char *)wind_uaddr_to_kaddr(p, WIND_ROMFS_IO_BUFSZ);
       uint32 i;
 
       if(wind_cmd_arg0(p, path, sizeof(path)) != 0)
@@ -192,7 +198,7 @@ user_wc_fn(struct xtensa_proc *p)
       if((fd = xtensa_romfs_open(path)) < 0)
         wind_write_cstr(p, 0, "wc: file not found\n");
       else{
-        while((n = xtensa_romfs_read(fd, buf, 63)) > 0){
+        while((n = xtensa_romfs_read(fd, buf, WIND_ROMFS_IO_BUFSZ - 1U)) > 0){
           bytes += (uint32)n;
           for(i = 0; i < (uint32)n; i++){
             char c = buf[i];
@@ -207,8 +213,8 @@ user_wc_fn(struct xtensa_proc *p)
           }
         }
         (void)xtensa_romfs_close(fd);
-        snprintf(out, 64, "%u %u %u %s\n", lines, words, bytes, path);
-        (void)wind_write(64);
+        snprintf(out, WIND_ROMFS_IO_BUFSZ, "%u %u %u %s\n", lines, words, bytes, path);
+        (void)wind_write(WIND_ROMFS_IO_BUFSZ);
       }
     }
     wind_exit(0);
