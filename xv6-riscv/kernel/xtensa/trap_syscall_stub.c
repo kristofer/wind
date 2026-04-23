@@ -117,6 +117,7 @@ xtensa_sys_read(struct xtensa_trapframe *tf)
   if(n >= 0)
     return n;
 
+  /* No committed line yet: sleep and let caller retry after wakeup. */
   (void)xtensa_sched_sleep_current_on_chan(xtensa_console_line_chan());
   return -1;
 }

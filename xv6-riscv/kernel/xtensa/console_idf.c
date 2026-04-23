@@ -96,7 +96,8 @@ console_input_ingest_char(int c)
   }
 
   /*
-   * r/w/e are monotonic counters with r <= w <= e.
+   * r/w/e are monotonic counters with r <= w <= e:
+   *   r = read cursor, w = committed-write cursor, e = edit cursor.
    * This prevents ring overwrite of unread or uncommitted bytes.
    */
   if((console_input.e - console_input.r) >= CONSOLE_INPUT_BUFSZ)
