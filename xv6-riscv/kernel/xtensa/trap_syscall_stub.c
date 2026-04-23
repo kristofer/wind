@@ -351,20 +351,37 @@ xtensa_sys_spawn(struct xtensa_trapframe *tf)
 {
   struct xtensa_proc *p = xtensa_sched_current_proc();
   uint32 uoffset = tf->arg0;
-  const char *name;
+  const char *line;
+  const char *cmd_start;
+  uint32 cmd_len;
   const struct wind_romfs_entry *entry;
+  char name[WIND_ROMFS_PATH_MAX];
   char path[WIND_ROMFS_PATH_MAX];
 
   if(p == 0 || p->ubase == 0 || uoffset >= p->usz)
     return -1;
 
-  name = (const char *)wind_uaddr_to_kaddr(p, uoffset);
+  line = (const char *)wind_uaddr_to_kaddr(p, uoffset);
+  while(*line == ' ' || *line == '\t')
+    line++;
+  if(*line == '\0')
+    return -1;
+
+  cmd_start = line;
+  while(*line != '\0' && *line != ' ' && *line != '\t')
+    line++;
+  cmd_len = (uint32)(line - cmd_start);
+  if(cmd_len == 0 || cmd_len >= sizeof(name))
+    return -1;
+  memcpy(name, cmd_start, cmd_len);
+  name[cmd_len] = '\0';
+
   if(xtensa_romfs_resolve_exec_path(name, path, sizeof(path)) != 0)
     return -1;
 
   entry = xtensa_romfs_lookup(path);
   if(entry != 0 && entry->kind == WIND_ROMFS_EXEC && entry->fn != 0)
-    return xtensa_sched_create_child(entry->fn);
+    return xtensa_sched_create_child(entry->fn, cmd_start);
 
   kprintf("wind: spawn: path '%s' not found\n", path);
   return -1;

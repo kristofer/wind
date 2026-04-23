@@ -26,6 +26,23 @@ wait_chan_for_parent(int parent_pid)
   return WIND_WAIT_CHAN_BASE | ((uint32)parent_pid & ~WIND_WAIT_CHAN_BASE);
 }
 
+static void
+sched_copy_cmdline(char *dst, const char *src)
+{
+  uint32 i = 0;
+  if(dst == 0)
+    return;
+  if(src == 0){
+    dst[0] = '\0';
+    return;
+  }
+  while(i + 1U < WIND_PROC_CMDLINE_MAX && src[i] != '\0'){
+    dst[i] = src[i];
+    i++;
+  }
+  dst[i] = '\0';
+}
+
 static int
 sched_wakeup_chan_locked(uint32 chan)
 {
@@ -88,6 +105,7 @@ xtensa_sched_init(void)
     procs[i].exit_code = 0;
     procs[i].parent_pid = -1;
     procs[i].killed = 0;
+    procs[i].cmdline[0] = '\0';
     __builtin_memset(&procs[i].context, 0, sizeof(procs[i].context));
     __builtin_memset(&procs[i].name, 0, sizeof(procs[i].name));
   }
@@ -130,6 +148,7 @@ xtensa_sched_create_proc(int pid)
       procs[i].exit_code = 0;
       procs[i].parent_pid = -1;
       procs[i].killed = 0;
+      procs[i].cmdline[0] = '\0';
       __builtin_memset(&procs[i].context, 0, sizeof(procs[i].context));
       snprintf(procs[i].name, sizeof(procs[i].name), "proc-%d", pid);
       runnable_count++;
@@ -179,7 +198,7 @@ xtensa_sched_create_proc_fn_parent(int pid, int parent_pid, void (*fn)(struct xt
  * This is the scheduling primitive underlying wind_spawn().
  */
 int
-xtensa_sched_create_child(void (*fn)(struct xtensa_proc *))
+xtensa_sched_create_child(void (*fn)(struct xtensa_proc *), const char *cmdline)
 {
   int parent_pid;
   int child_pid;
@@ -198,6 +217,17 @@ xtensa_sched_create_child(void (*fn)(struct xtensa_proc *))
 
   if(xtensa_sched_create_proc_fn_parent(child_pid, parent_pid, fn) != 0)
     return -1;
+  sched_lock_enter();
+  {
+    uint32 i;
+    for(i = 0; i < WIND_SCHED_SLOTS; i++){
+      if(procs[i].pid == child_pid && procs[i].state != XTENSA_PROC_UNUSED){
+        sched_copy_cmdline(procs[i].cmdline, cmdline);
+        break;
+      }
+    }
+  }
+  sched_lock_exit();
   kprintf("wind: sched spawn child_pid=%d parent=%d\n", child_pid, parent_pid);
   return child_pid;
 }
@@ -378,6 +408,7 @@ xtensa_sched_wait_current(int *wstatus)
       procs[i].killed = 0;
       procs[i].ubase = 0;
       procs[i].usz   = 0;
+      procs[i].cmdline[0] = '\0';
       __builtin_memset(&procs[i].context, 0, sizeof(procs[i].context));
       __builtin_memset(&procs[i].name, 0, sizeof(procs[i].name));
       if(zombie_count > 0)

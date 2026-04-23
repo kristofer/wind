@@ -4,6 +4,7 @@
 #ifdef WIND_ESP_IDF_APP
 #include "sdkconfig.h"
 #include "esp_system.h"
+#include <stdio.h>
 extern void kinit(void);
 extern void *kalloc(void);
 extern void kfree(void *);
@@ -71,13 +72,62 @@ wind_write_cstr(struct xtensa_proc *p, uint32 uoff, const char *s)
     (void)wind_write(uoff);
 }
 
+static const char *
+wind_cmd_args(const struct xtensa_proc *p)
+{
+  const char *s;
+
+  if(p == 0)
+    return "";
+  s = p->cmdline;
+  while(*s == ' ' || *s == '\t')
+    s++;
+  while(*s != '\0' && *s != ' ' && *s != '\t')
+    s++;
+  while(*s == ' ' || *s == '\t')
+    s++;
+  return s;
+}
+
+static int
+wind_cmd_arg0(const struct xtensa_proc *p, char *dst, uint32 dst_len)
+{
+  const char *s = wind_cmd_args(p);
+  uint32 n = 0;
+
+  if(dst == 0 || dst_len == 0)
+    return -1;
+  if(*s == '\0'){
+    dst[0] = '\0';
+    return -1;
+  }
+  while(s[n] != '\0' && s[n] != ' ' && s[n] != '\t' && n + 1U < dst_len){
+    dst[n] = s[n];
+    n++;
+  }
+  dst[n] = '\0';
+  if(s[n] != '\0' && s[n] != ' ' && s[n] != '\t')
+    return -1;
+  return 0;
+}
+
 static void
 user_echo_fn(struct xtensa_proc *p)
 {
   p->fn_state++;
   if(p->fn_state == 1){
-    if(wind_proc_uregion_alloc(32) == 0)
-      wind_write_cstr(p, 0, "echo\n");
+    if(wind_proc_uregion_alloc(128) == 0){
+      char *out = (char *)wind_uaddr_to_kaddr(p, 0);
+      const char *args = wind_cmd_args(p);
+      uint32 i = 0;
+      while(args[i] != '\0' && i + 2U < p->usz){
+        out[i] = args[i];
+        i++;
+      }
+      out[i++] = '\n';
+      out[i] = '\0';
+      (void)wind_write(0);
+    }
     wind_exit(0);
   }
 }
@@ -98,8 +148,24 @@ user_cat_fn(struct xtensa_proc *p)
 {
   p->fn_state++;
   if(p->fn_state == 1){
-    if(wind_proc_uregion_alloc(64) == 0)
-      wind_write_cstr(p, 0, "wind: romfs demo payload\n");
+    if(wind_proc_uregion_alloc(128) == 0){
+      char path[64];
+      int fd;
+      int n;
+      char *out = (char *)wind_uaddr_to_kaddr(p, 0);
+
+      if(wind_cmd_arg0(p, path, sizeof(path)) != 0)
+        snprintf(path, sizeof(path), "/etc/motd");
+      if((fd = xtensa_romfs_open(path)) < 0)
+        wind_write_cstr(p, 0, "cat: file not found\n");
+      else{
+        while((n = xtensa_romfs_read(fd, out, p->usz - 1U)) > 0){
+          out[(uint32)n] = '\0';
+          (void)wind_write(0);
+        }
+        (void)xtensa_romfs_close(fd);
+      }
+    }
     wind_exit(0);
   }
 }
@@ -109,8 +175,42 @@ user_wc_fn(struct xtensa_proc *p)
 {
   p->fn_state++;
   if(p->fn_state == 1){
-    if(wind_proc_uregion_alloc(32) == 0)
-      wind_write_cstr(p, 0, "1 4 24\n");
+    if(wind_proc_uregion_alloc(128) == 0){
+      char path[64];
+      int fd;
+      int n;
+      uint32 lines = 0;
+      uint32 words = 0;
+      uint32 bytes = 0;
+      int in_word = 0;
+      char *buf = (char *)wind_uaddr_to_kaddr(p, 0);
+      char *out = (char *)wind_uaddr_to_kaddr(p, 64);
+      uint32 i;
+
+      if(wind_cmd_arg0(p, path, sizeof(path)) != 0)
+        snprintf(path, sizeof(path), "/etc/motd");
+      if((fd = xtensa_romfs_open(path)) < 0)
+        wind_write_cstr(p, 0, "wc: file not found\n");
+      else{
+        while((n = xtensa_romfs_read(fd, buf, 63)) > 0){
+          bytes += (uint32)n;
+          for(i = 0; i < (uint32)n; i++){
+            char c = buf[i];
+            if(c == '\n')
+              lines++;
+            if(c == ' ' || c == '\t' || c == '\n' || c == '\r')
+              in_word = 0;
+            else if(!in_word){
+              words++;
+              in_word = 1;
+            }
+          }
+        }
+        (void)xtensa_romfs_close(fd);
+        snprintf(out, 64, "%u %u %u %s\n", lines, words, bytes, path);
+        (void)wind_write(64);
+      }
+    }
     wind_exit(0);
   }
 }
@@ -120,7 +220,6 @@ user_shell_fn(struct xtensa_proc *p)
 {
   char *line;
   char *cmd;
-  char *end;
   int n;
   int status;
   int child;
@@ -160,10 +259,6 @@ user_shell_fn(struct xtensa_proc *p)
     cmd = line;
     while(*cmd == ' ' || *cmd == '\t')
       cmd++;
-    end = cmd;
-    while(*end != '\0' && *end != ' ' && *end != '\t')
-      end++;
-    *end = '\0';
 
     if(*cmd == '\0'){
       p->fn_state = 1;
