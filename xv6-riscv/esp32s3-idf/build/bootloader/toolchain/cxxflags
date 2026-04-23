@@ -1,0 +1,6 @@
+"-specs=/Users/kryounger/LocalProjects/wind/xv6-riscv/esp32s3-idf/build/bootloader/specs/picolibc.specs"
+-mlongcalls
+-fno-builtin-memcpy
+-fno-builtin-memset
+-fno-builtin-bzero
+-fno-rtti

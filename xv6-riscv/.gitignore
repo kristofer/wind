@@ -17,4 +17,4 @@ user/usys.S
 .gdbinit
 TAGS
 /build/
-xv6-riscv/esp32s3-idf/build/
+xv6-riscv/esp32s3-idf/build/*
