@@ -19,6 +19,8 @@
 #define WIND_SYSCALL_EXEC_BY_NAME 10U  /* exec named program from embedded table */
 #define WIND_SYSCALL_SPAWN        11U  /* spawn named child process; caller continues */
 #define WIND_SYSCALL_READ         12U  /* read console line bytes into uregion offset */
+#define WIND_SYSCALL_OPEN         13U  /* open ROMFS path from uregion; returns fd */
+#define WIND_SYSCALL_CLOSE        14U  /* close ROMFS fd */
 
 struct xtensa_trapframe {
   uint32 syscall_no;
@@ -92,6 +94,7 @@ struct wind_romfs_entry {
 void xtensa_romfs_catalog_set(const struct wind_romfs_entry *table, uint32 count);
 int  xtensa_romfs_open(const char *path);
 int  xtensa_romfs_read(int fd, void *dst, uint32 maxlen);
+int  xtensa_romfs_write(int fd, const void *src, uint32 len);
 int  xtensa_romfs_close(int fd);
 int  xtensa_romfs_exec_path(const char *path);
 int  xtensa_sched_create_child(void (*fn)(struct xtensa_proc *), const char *cmdline); /* spawn child of current proc */
@@ -148,6 +151,9 @@ int  wind_write(uint32 uoffset);
 int  wind_read(uint32 uoffset, uint32 maxlen);
 /* exec named program from the registered program table; caller must return */
 int  wind_exec_by_name(const char *name);
+/* open/close ROMFS path or device by kernel-address string */
+int  wind_open(const char *path);
+int  wind_close(int fd);
 uint32 xtensa_console_line_chan(void);
 void xtensa_console_poll_input(void);
 int  xtensa_console_read(char *dst, uint32 maxlen);
