@@ -10,6 +10,8 @@
 #define CONSOLE_LINE_BUFSZ 256
 #define CONSOLE_INPUT_BUFSZ 256
 #define CONSOLE_LINE_CHAN 0x434F4E53U
+#define ASCII_SPACE 0x20
+#define ASCII_DEL 0x7f
 
 static char console_line[CONSOLE_LINE_BUFSZ];
 static uint32 console_len;
@@ -81,13 +83,15 @@ console_input_commit_line(void)
 static void
 console_input_ingest_char(int c)
 {
+  uint32 used;
+
   if(c < 0)
     return;
 
   if(c == '\r')
     c = '\n';
 
-  if(c == '\b' || c == 0x7f){
+  if(c == '\b' || c == ASCII_DEL){
     if(console_input.e > console_input.w){
       console_input.e--;
       console_input_echo_backspace();
@@ -100,13 +104,14 @@ console_input_ingest_char(int c)
    *   r = read cursor, w = committed-write cursor, e = edit cursor.
    * This prevents ring overwrite of unread or uncommitted bytes.
    */
-  if((console_input.e - console_input.r) >= CONSOLE_INPUT_BUFSZ)
+  used = console_input.e - console_input.r;
+  if(used == CONSOLE_INPUT_BUFSZ)
     return;
 
   if(c == '\n'){
     uart_putc('\r');
     uart_putc('\n');
-  } else if(c >= 0x20 && c < 0x7f){
+  } else if(c >= ASCII_SPACE && c < ASCII_DEL){
     uart_putc((char)c);
   } else {
     return;
@@ -114,8 +119,9 @@ console_input_ingest_char(int c)
 
   console_input.buf[console_input.e % CONSOLE_INPUT_BUFSZ] = (char)c;
   console_input.e++;
+  used++;
 
-  if(c == '\n' || (console_input.e - console_input.r) == CONSOLE_INPUT_BUFSZ)
+  if(c == '\n' || used == CONSOLE_INPUT_BUFSZ)
     console_input_commit_line();
 }
 
