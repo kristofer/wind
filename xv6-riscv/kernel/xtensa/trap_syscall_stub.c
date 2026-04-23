@@ -409,7 +409,6 @@ wind_write(uint32 uoffset)
   struct xtensa_trapframe tf;
   tf.syscall_no = WIND_SYSCALL_WRITE;
   tf.arg0 = uoffset;
-  tf.arg1 = 0;
   tf.retval = (uint32)-1;
   xtensa_trap_handle_syscall(&tf);
   return (int)tf.retval;
