@@ -6,6 +6,7 @@
 #define XTENSA_CPU_HZ 80000000U
 #define XTENSA_TICK_HZ 1000U
 #define WIND_INIT_PID 100
+#define WIND_PROC_CMDLINE_MAX 96U
 #define WIND_SYSCALL_YIELD 1U
 #define WIND_SYSCALL_SLEEP_ON_CHAN 2U
 #define WIND_SYSCALL_WAKEUP_CHAN 3U
@@ -69,6 +70,7 @@ struct xtensa_proc {
   int killed;
   uint32 ubase;  /* physical base of user region (0 = none); replaces pagetable_t */
   uint32 usz;    /* size of user region in bytes */
+  char cmdline[WIND_PROC_CMDLINE_MAX]; /* spawn command line: argv[0] + raw args */
 };
 
 enum wind_romfs_entry_kind {
@@ -92,7 +94,7 @@ int  xtensa_romfs_open(const char *path);
 int  xtensa_romfs_read(int fd, void *dst, uint32 maxlen);
 int  xtensa_romfs_close(int fd);
 int  xtensa_romfs_exec_path(const char *path);
-int  xtensa_sched_create_child(void (*fn)(struct xtensa_proc *)); /* spawn child of current proc */
+int  xtensa_sched_create_child(void (*fn)(struct xtensa_proc *), const char *cmdline); /* spawn child of current proc */
 
 void xtensa_kernel_init(void);
 void xtensa_kernel_poll(void);
