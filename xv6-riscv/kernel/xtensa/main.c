@@ -144,7 +144,7 @@ user_ls_fn(struct xtensa_proc *p)
   p->fn_state++;
   if(p->fn_state == 1){
     if(wind_proc_uregion_alloc(64) == 0)
-      wind_write_cstr(p, 0, "shell\necho\nls\ncat\nwc\n");
+      wind_write_cstr(p, 0, "echo\nls\ncat\nwc\ngrep\nmkdir\nrm\nshell\n");
     wind_exit(0);
   }
 }
@@ -219,6 +219,143 @@ user_wc_fn(struct xtensa_proc *p)
       }
     }
     wind_exit(0);
+  }
+}
+
+/*
+ * user_grep_fn — Phase 6 grep command.
+ *
+ * Usage: grep pattern file
+ * Reads a ROMFS file in chunks, assembles lines, and prints any line
+ * that contains the specified pattern.  Returns EROFS-like error for
+ * write/modify operations (not applicable here, but grep is read-only).
+ *
+ * uregion layout (192 bytes):
+ *   [0 .. 63]  : line assembly buffer (linebuf)
+ *   [64 .. 127]: output write buffer  (outbuf)
+ */
+#define GREP_LINEBUF_OFF  0U
+#define GREP_OUTBUF_OFF   64U
+#define GREP_UREGION_SZ   192U
+#define GREP_LINE_MAX     62U   /* max line length to match against */
+
+static void
+user_grep_fn(struct xtensa_proc *p)
+{
+  p->fn_state++;
+  if(p->fn_state == 1){
+    char pattern[32];
+    char path[48];
+    char readbuf[32];
+    char *linebuf;
+    char *outbuf;
+    const char *args;
+    const char *next;
+    uint32 pi, plen, li;
+    int fd, n;
+    uint32 i;
+
+    if(wind_proc_uregion_alloc(GREP_UREGION_SZ) != 0){
+      wind_exit(1);
+      return;
+    }
+    linebuf = (char *)wind_uaddr_to_kaddr(p, GREP_LINEBUF_OFF);
+    outbuf  = (char *)wind_uaddr_to_kaddr(p, GREP_OUTBUF_OFF);
+
+    /* extract pattern (first word after command name) */
+    args = wind_cmd_args(p);
+    for(pi = 0; pi + 1U < sizeof(pattern) && args[pi] != '\0' &&
+        args[pi] != ' ' && args[pi] != '\t'; pi++)
+      pattern[pi] = args[pi];
+    pattern[pi] = '\0';
+    plen = pi;
+
+    /* skip whitespace between pattern and filename */
+    next = args + pi;
+    while(*next == ' ' || *next == '\t')
+      next++;
+
+    /* extract path (second word) */
+    for(pi = 0; pi + 1U < sizeof(path) && next[pi] != '\0' &&
+        next[pi] != ' ' && next[pi] != '\t'; pi++)
+      path[pi] = next[pi];
+    path[pi] = '\0';
+
+    if(plen == 0 || path[0] == '\0'){
+      wind_write_cstr(p, GREP_LINEBUF_OFF, "grep: usage: grep pattern file\n");
+      wind_exit(1);
+      return;
+    }
+
+    fd = xtensa_romfs_open(path);
+    if(fd < 0){
+      wind_write_cstr(p, GREP_LINEBUF_OFF, "grep: file not found\n");
+      wind_exit(1);
+      return;
+    }
+
+    /* scan file: assemble lines in linebuf, print those containing pattern */
+    li = 0;
+    while((n = xtensa_romfs_read(fd, readbuf, sizeof(readbuf) - 1U)) > 0){
+      for(i = 0; i < (uint32)n; i++){
+        char c = readbuf[i];
+        if(c == '\n' || li >= GREP_LINE_MAX){
+          /* search for pattern within assembled line */
+          uint32 j, k;
+          for(j = 0; j + plen <= li; j++){
+            for(k = 0; k < plen; k++){
+              if(linebuf[j + k] != pattern[k])
+                break;
+            }
+            if(k == plen){
+              /* match: copy line to outbuf and write to console */
+              uint32 olen = (li < GREP_LINE_MAX) ? li : GREP_LINE_MAX;
+              for(k = 0; k < olen; k++)
+                outbuf[k] = linebuf[k];
+              outbuf[olen]      = '\n';
+              outbuf[olen + 1U] = '\0';
+              (void)wind_write(GREP_OUTBUF_OFF);
+              break;
+            }
+          }
+          li = 0;
+        } else {
+          linebuf[li++] = c;
+        }
+      }
+    }
+    xtensa_romfs_close(fd);
+    wind_exit(0);
+  }
+}
+
+/*
+ * user_mkdir_fn — Phase 6 mkdir stub.
+ * ROMFS is read-only; return a clear error on any mkdir attempt.
+ */
+static void
+user_mkdir_fn(struct xtensa_proc *p)
+{
+  p->fn_state++;
+  if(p->fn_state == 1){
+    if(wind_proc_uregion_alloc(64) == 0)
+      wind_write_cstr(p, 0, "mkdir: read-only filesystem\n");
+    wind_exit(1);
+  }
+}
+
+/*
+ * user_rm_fn — Phase 6 rm stub.
+ * ROMFS is read-only; return a clear error on any rm attempt.
+ */
+static void
+user_rm_fn(struct xtensa_proc *p)
+{
+  p->fn_state++;
+  if(p->fn_state == 1){
+    if(wind_proc_uregion_alloc(64) == 0)
+      wind_write_cstr(p, 0, "rm: read-only filesystem\n");
+    wind_exit(1);
   }
 }
 
@@ -305,6 +442,9 @@ static const struct wind_romfs_entry wind_romfs_catalog[] = {
   { "/bin/ls",    WIND_ROMFS_EXEC, 0, 0, user_ls_fn    },
   { "/bin/cat",   WIND_ROMFS_EXEC, 0, 0, user_cat_fn   },
   { "/bin/wc",    WIND_ROMFS_EXEC, 0, 0, user_wc_fn    },
+  { "/bin/grep",  WIND_ROMFS_EXEC, 0, 0, user_grep_fn  },
+  { "/bin/mkdir", WIND_ROMFS_EXEC, 0, 0, user_mkdir_fn },
+  { "/bin/rm",    WIND_ROMFS_EXEC, 0, 0, user_rm_fn    },
   { "/etc/motd",  WIND_ROMFS_DATA, wind_romfs_motd, sizeof(wind_romfs_motd) - 1U /* exclude NUL terminator from data_len */, 0 },
   { WIND_ROMFS_DEV_CONSOLE_PATH, WIND_ROMFS_DEV, 0, 0, 0 },
 };

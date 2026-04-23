@@ -200,6 +200,71 @@ xtensa_romfs_resolve_exec_path(const char *name_or_path, char *dst, uint32 dst_l
   return 0;
 }
 
+int
+xtensa_romfs_write(int fd, const void *src_void, uint32 len)
+{
+  const struct wind_romfs_entry *entry;
+  const char *src = (const char *)src_void;
+  uint32 fdu;
+  uint32 i;
+
+  if(fd < 0 || src == 0)
+    return -1;
+  fdu = (uint32)fd;
+  if(fdu >= WIND_ROMFS_FD_MAX)
+    return -1;
+
+  entry = romfs_fds[fdu].entry;
+  if(entry == 0)
+    return -1;
+
+  if(entry->kind == WIND_ROMFS_DEV){
+    if(strcmp(entry->path, WIND_ROMFS_DEV_CONSOLE_PATH) == 0){
+      for(i = 0; i < len; i++)
+        consputc((int)(unsigned char)src[i]);
+      return (int)len;
+    }
+    return -1;
+  }
+
+  /* ROMFS_DATA and ROMFS_EXEC are read-only */
+  return -1;
+}
+
+/*
+ * xtensa_sys_open — WIND_SYSCALL_OPEN
+ *
+ * Opens a ROMFS path whose null-terminated string is in the calling
+ * proc's uregion at byte offset tf->arg0.  Returns an fd on success,
+ * -1 on error.  This is the open(path,...) analogue for the flat model.
+ */
+static int
+xtensa_sys_open(struct xtensa_trapframe *tf)
+{
+  struct xtensa_proc *p = xtensa_sched_current_proc();
+  uint32 uoffset = tf->arg0;
+  const char *path;
+
+  if(p == 0 || p->ubase == 0 || uoffset >= p->usz)
+    return -1;
+
+  path = (const char *)wind_uaddr_to_kaddr(p, uoffset);
+  return xtensa_romfs_open(path);
+}
+
+/*
+ * xtensa_sys_close — WIND_SYSCALL_CLOSE
+ *
+ * Closes a ROMFS fd.  tf->arg0 is the fd to close.
+ */
+static int
+xtensa_sys_close(struct xtensa_trapframe *tf)
+{
+  int fd = (int)tf->arg0;
+  return xtensa_romfs_close(fd);
+}
+
+
 void
 xtensa_romfs_catalog_set(const struct wind_romfs_entry *table, uint32 count)
 {
@@ -463,6 +528,13 @@ xtensa_trap_handle_syscall(struct xtensa_trapframe *tf)
     tf->retval = xtensa_sys_spawn(tf);
     kprintf("wind: syscall spawn ret=%d count=%u\n", (int)tf->retval, syscall_count);
     break;
+  case WIND_SYSCALL_OPEN:
+    tf->retval = xtensa_sys_open(tf);
+    kprintf("wind: syscall open(uoff=%u) ret=%d count=%u\n", tf->arg0, (int)tf->retval, syscall_count);
+    break;
+  case WIND_SYSCALL_CLOSE:
+    tf->retval = xtensa_sys_close(tf);
+    break;
   default:
     tf->retval = -1;
     kprintf("wind: syscall unknown no=%u count=%u\n", tf->syscall_no, syscall_count);
@@ -693,6 +765,50 @@ wind_spawn(const char *name)
 
   tf.syscall_no = WIND_SYSCALL_SPAWN;
   tf.arg0 = 0;
+  tf.retval = (uint32)-1;
+  xtensa_trap_handle_syscall(&tf);
+  return (int)tf.retval;
+}
+
+/*
+ * wind_open — open a ROMFS path or device node.
+ *
+ * Writes path into the calling proc's uregion at offset 0, issues
+ * WIND_SYSCALL_OPEN, and returns an fd on success or -1 on failure.
+ * The proc must have a uregion allocated before calling this.
+ */
+int
+wind_open(const char *path)
+{
+  struct xtensa_proc *p = xtensa_sched_current_proc();
+  struct xtensa_trapframe tf;
+  uint8 *buf;
+  uint32 i;
+
+  if(p == 0 || p->ubase == 0 || path == 0)
+    return -1;
+
+  buf = (uint8 *)wind_uaddr_to_kaddr(p, 0);
+  for(i = 0; path[i] != '\0' && i < (p->usz - 1U); i++)
+    buf[i] = (uint8)path[i];
+  buf[i] = '\0';
+
+  tf.syscall_no = WIND_SYSCALL_OPEN;
+  tf.arg0 = 0;  /* uregion offset 0 */
+  tf.retval = (uint32)-1;
+  xtensa_trap_handle_syscall(&tf);
+  return (int)tf.retval;
+}
+
+/*
+ * wind_close — close a ROMFS fd returned by wind_open.
+ */
+int
+wind_close(int fd)
+{
+  struct xtensa_trapframe tf;
+  tf.syscall_no = WIND_SYSCALL_CLOSE;
+  tf.arg0 = (uint32)fd;
   tf.retval = (uint32)-1;
   xtensa_trap_handle_syscall(&tf);
   return (int)tf.retval;
