@@ -121,6 +121,7 @@ user_echo_fn(struct xtensa_proc *p)
       char *out = (char *)wind_uaddr_to_kaddr(p, 0);
       const char *args = wind_cmd_args(p);
       uint32 i = 0;
+      /* Need room for at least '\n' + '\0'. */
       if(p->usz < 2U){
         wind_exit(1);
         return;
@@ -158,14 +159,14 @@ user_cat_fn(struct xtensa_proc *p)
       int fd;
       int n;
       char *out = (char *)wind_uaddr_to_kaddr(p, 0);
-      uint32 max_read = (p->usz > 0U) ? (p->usz - 1U) : 0U;
+      uint32 output_buf_cap = (p->usz > 0U) ? (p->usz - 1U) : 0U;
 
       if(wind_cmd_arg0(p, path, sizeof(path)) != 0)
         snprintf(path, sizeof(path), "/etc/motd");
       if((fd = xtensa_romfs_open(path)) < 0)
         wind_write_cstr(p, 0, "cat: file not found\n");
       else{
-        while(max_read > 0U && (n = xtensa_romfs_read(fd, out, max_read)) > 0){
+        while(output_buf_cap > 0U && (n = xtensa_romfs_read(fd, out, output_buf_cap)) > 0){
           out[(uint32)n] = '\0';
           (void)wind_write(0);
         }

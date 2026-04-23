@@ -374,7 +374,7 @@ xtensa_sys_spawn(struct xtensa_trapframe *tf)
   while(*line != '\0' && *line != ' ' && *line != '\t')
     line++;
   cmd_len = (uint32)(line - cmd_start);
-  if(cmd_len == 0 || cmd_len >= sizeof(name))
+  if(cmd_len == 0 || cmd_len + 1U > sizeof(name))
     return -1;
   memcpy(name, cmd_start, cmd_len);
   name[cmd_len] = '\0';
