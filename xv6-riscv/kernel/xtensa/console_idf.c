@@ -88,7 +88,7 @@ console_input_ingest_char(int c)
     c = '\n';
 
   if(c == '\b' || c == 0x7f){
-    if(console_input.e != console_input.w){
+    if(console_input.e > console_input.w){
       console_input.e--;
       console_input_echo_backspace();
     }
