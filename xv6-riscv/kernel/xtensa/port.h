@@ -71,24 +71,24 @@ struct xtensa_proc {
   uint32 usz;    /* size of user region in bytes */
 };
 
-/*
- * Program table — the embedded "filesystem" for Phase 6.
- *
- * Each entry maps a name to a kernel entry function.  wind_exec_by_name
- * looks up the table and calls xtensa_sched_exec_current, giving exec()
- * semantics without a real filesystem: the "program image" is a C
- * function compiled directly into the kernel binary in IROM (flash),
- * so it is always executable and costs no heap allocation.
- *
- * Register the table once at boot via xtensa_program_table_set.
- * Later phases can extend this to load from a flash partition.
- */
-struct wind_program {
-  const char *name;             /* program name, e.g. "init", "shell" */
-  void (*fn)(struct xtensa_proc *);  /* kernel entry fn (lives in IROM) */
+enum wind_romfs_entry_kind {
+  WIND_ROMFS_EXEC = 1,  /* executable image mapped to kernel fn */
+  WIND_ROMFS_DATA = 2,  /* read-only regular file payload */
+  WIND_ROMFS_DEV  = 3,  /* simple device node */
 };
 
-void xtensa_program_table_set(const struct wind_program *table, uint32 count);
+struct wind_romfs_entry {
+  const char *path;                   /* absolute path, e.g. "/bin/shell" */
+  enum wind_romfs_entry_kind kind;
+  const char *data;                   /* valid for WIND_ROMFS_DATA */
+  uint32 data_len;                    /* valid for WIND_ROMFS_DATA */
+  void (*fn)(struct xtensa_proc *);   /* valid for WIND_ROMFS_EXEC */
+};
+
+void xtensa_romfs_catalog_set(const struct wind_romfs_entry *table, uint32 count);
+int  xtensa_romfs_open(const char *path);
+int  xtensa_romfs_read(int fd, char *dst, uint32 maxlen);
+int  xtensa_romfs_exec_path(const char *path);
 int  xtensa_sched_create_child(void (*fn)(struct xtensa_proc *)); /* spawn child of current proc */
 
 void xtensa_kernel_init(void);

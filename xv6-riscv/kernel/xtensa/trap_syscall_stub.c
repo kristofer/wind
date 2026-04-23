@@ -137,18 +137,148 @@ xtensa_sys_exec(struct xtensa_trapframe *tf)
   return xtensa_sched_exec_current(fn);
 }
 /*
- * Program table — set once at boot by xtensa_program_table_set.
- * Looked up by xtensa_sys_exec_by_name when a proc calls exec_by_name.
+ * ROMFS catalog — set once at boot by xtensa_romfs_catalog_set.
+ * Paths are looked up for spawn/exec and read-only opens.
  */
-static const struct wind_program *prog_table;
-static uint32 prog_table_count;
+#define WIND_ROMFS_FD_MAX 8U
+#define WIND_ROMFS_PATH_MAX 64U
+
+struct wind_romfs_fd_state {
+  const struct wind_romfs_entry *entry;
+  uint32 off;
+};
+
+static const struct wind_romfs_entry *romfs_table;
+static uint32 romfs_table_count;
+static struct wind_romfs_fd_state romfs_fds[WIND_ROMFS_FD_MAX];
+
+static const struct wind_romfs_entry *
+xtensa_romfs_lookup(const char *path)
+{
+  uint32 i;
+
+  if(path == 0 || romfs_table == 0)
+    return 0;
+
+  for(i = 0; i < romfs_table_count; i++){
+    if(strcmp(romfs_table[i].path, path) == 0)
+      return &romfs_table[i];
+  }
+  return 0;
+}
+
+static int
+xtensa_romfs_resolve_exec_path(const char *name_or_path, char *dst, uint32 dst_len)
+{
+  const char *prefix = "/bin/";
+  uint32 i = 0;
+  uint32 j = 0;
+
+  if(name_or_path == 0 || dst == 0 || dst_len < 2U)
+    return -1;
+
+  if(name_or_path[0] == '/'){
+    for(i = 0; i + 1U < dst_len && name_or_path[i] != '\0'; i++)
+      dst[i] = name_or_path[i];
+    dst[i] = '\0';
+    if(name_or_path[i] != '\0')
+      return -1;
+    return 0;
+  }
+
+  for(i = 0; i + 1U < dst_len && prefix[i] != '\0'; i++)
+    dst[i] = prefix[i];
+  if(prefix[i] != '\0')
+    return -1;
+  j = i;
+  for(i = 0; j + 1U < dst_len && name_or_path[i] != '\0'; i++, j++)
+    dst[j] = name_or_path[i];
+  dst[j] = '\0';
+  if(name_or_path[i] != '\0')
+    return -1;
+  return 0;
+}
 
 void
-xtensa_program_table_set(const struct wind_program *table, uint32 count)
+xtensa_romfs_catalog_set(const struct wind_romfs_entry *table, uint32 count)
 {
-  prog_table       = table;
-  prog_table_count = count;
-  kprintf("wind: program table registered count=%u\n", count);
+  uint32 i;
+
+  romfs_table = table;
+  romfs_table_count = count;
+  for(i = 0; i < WIND_ROMFS_FD_MAX; i++){
+    romfs_fds[i].entry = 0;
+    romfs_fds[i].off = 0;
+  }
+  kprintf("wind: romfs catalog registered count=%u\n", count);
+}
+
+int
+xtensa_romfs_open(const char *path)
+{
+  const struct wind_romfs_entry *entry;
+  uint32 i;
+
+  entry = xtensa_romfs_lookup(path);
+  if(entry == 0)
+    return -1;
+
+  for(i = 0; i < WIND_ROMFS_FD_MAX; i++){
+    if(romfs_fds[i].entry == 0){
+      romfs_fds[i].entry = entry;
+      romfs_fds[i].off = 0;
+      return (int)i;
+    }
+  }
+  return -1;
+}
+
+int
+xtensa_romfs_read(int fd, char *dst, uint32 maxlen)
+{
+  const struct wind_romfs_entry *entry;
+  uint32 i;
+  uint32 n;
+
+  if(fd < 0 || (uint32)fd >= WIND_ROMFS_FD_MAX || dst == 0 || maxlen == 0)
+    return -1;
+
+  entry = romfs_fds[(uint32)fd].entry;
+  if(entry == 0)
+    return -1;
+
+  if(entry->kind == WIND_ROMFS_DEV){
+    if(strcmp(entry->path, "/dev/console") == 0)
+      return xtensa_console_read(dst, maxlen);
+    return -1;
+  }
+
+  if(entry->kind != WIND_ROMFS_DATA || entry->data == 0)
+    return -1;
+
+  if(romfs_fds[(uint32)fd].off >= entry->data_len)
+    return 0;
+
+  n = entry->data_len - romfs_fds[(uint32)fd].off;
+  if(n > maxlen)
+    n = maxlen;
+
+  for(i = 0; i < n; i++)
+    dst[i] = entry->data[romfs_fds[(uint32)fd].off + i];
+  romfs_fds[(uint32)fd].off += n;
+  return (int)n;
+}
+
+int
+xtensa_romfs_exec_path(const char *path)
+{
+  const struct wind_romfs_entry *entry;
+
+  entry = xtensa_romfs_lookup(path);
+  if(entry == 0 || entry->kind != WIND_ROMFS_EXEC || entry->fn == 0)
+    return -1;
+
+  return xtensa_sched_exec_current(entry->fn);
 }
 
 /*
@@ -168,20 +298,17 @@ xtensa_sys_exec_by_name(struct xtensa_trapframe *tf)
   struct xtensa_proc *p = xtensa_sched_current_proc();
   uint32 uoffset = tf->arg0;
   const char *name;
-  uint32 i;
+  char path[WIND_ROMFS_PATH_MAX];
 
   if(p == 0 || p->ubase == 0 || uoffset >= p->usz)
     return -1;
 
   name = (const char *)wind_uaddr_to_kaddr(p, uoffset);
-
-  if(prog_table == 0)
+  if(xtensa_romfs_resolve_exec_path(name, path, sizeof(path)) != 0)
     return -1;
-  for(i = 0; i < prog_table_count; i++){
-    if(strcmp(prog_table[i].name, name) == 0)
-      return xtensa_sched_exec_current(prog_table[i].fn);
-  }
-  kprintf("wind: exec_by_name: program '%s' not found\n", name);
+  if(xtensa_romfs_exec_path(path) == 0)
+    return 0;
+  kprintf("wind: exec_by_name: path '%s' not found\n", path);
   return -1;
 }
 
@@ -203,19 +330,21 @@ xtensa_sys_spawn(struct xtensa_trapframe *tf)
   struct xtensa_proc *p = xtensa_sched_current_proc();
   uint32 uoffset = tf->arg0;
   const char *name;
-  uint32 i;
+  const struct wind_romfs_entry *entry;
+  char path[WIND_ROMFS_PATH_MAX];
 
   if(p == 0 || p->ubase == 0 || uoffset >= p->usz)
     return -1;
 
   name = (const char *)wind_uaddr_to_kaddr(p, uoffset);
-  if(prog_table == 0)
+  if(xtensa_romfs_resolve_exec_path(name, path, sizeof(path)) != 0)
     return -1;
-  for(i = 0; i < prog_table_count; i++){
-    if(strcmp(prog_table[i].name, name) == 0)
-      return xtensa_sched_create_child(prog_table[i].fn);
-  }
-  kprintf("wind: spawn: program '%s' not found\n", name);
+
+  entry = xtensa_romfs_lookup(path);
+  if(entry != 0 && entry->kind == WIND_ROMFS_EXEC && entry->fn != 0)
+    return xtensa_sched_create_child(entry->fn);
+
+  kprintf("wind: spawn: path '%s' not found\n", path);
   return -1;
 }
 void
