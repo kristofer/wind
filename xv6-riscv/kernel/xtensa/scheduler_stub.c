@@ -228,7 +228,6 @@ xtensa_sched_create_child(void (*fn)(struct xtensa_proc *), const char *cmdline)
     }
   }
   sched_lock_exit();
-  kprintf("wind: sched spawn child_pid=%d parent=%d\n", child_pid, parent_pid);
   return child_pid;
 }
 
@@ -307,12 +306,6 @@ xtensa_sched_exit_current(int code)
   }
   sched_lock_exit();
 
-  kprintf("wind: sched zombie pid=%d ppid=%d exit=%d zombie=%u\n",
-          exiting_pid,
-          parent_pid,
-          code,
-          xtensa_sched_zombie_count());
-
   return 0;
 }
 
@@ -349,7 +342,6 @@ xtensa_sched_exec_current(void (*fn)(struct xtensa_proc *))
   /* free uregion outside the lock */
   xtensa_user_free(p);
 
-  kprintf("wind: sched exec pid=%d -> new fn\n", p->pid);
   return 0;
 }
 
@@ -431,11 +423,6 @@ xtensa_sched_wait_current(int *wstatus)
     (void)ubase_to_free;
     (void)usz_to_free;
 #endif
-    kprintf("wind: sched reap parent=%d child=%d status=%d zombie=%u\n",
-            child_ppid,
-            child_pid,
-            child_exit,
-            xtensa_sched_zombie_count());
     if(wstatus != 0)
       *wstatus = child_exit;
     return child_pid;

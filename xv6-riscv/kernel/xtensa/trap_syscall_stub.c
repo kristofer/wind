@@ -477,17 +477,12 @@ xtensa_trap_handle_syscall(struct xtensa_trapframe *tf)
   switch(tf->syscall_no){
   case WIND_SYSCALL_YIELD:
     tf->retval = xtensa_sys_yield(tf);
-    kprintf("wind: syscall yield ret_pid=%d count=%u\n", tf->retval, syscall_count);
     break;
   case WIND_SYSCALL_SLEEP_ON_CHAN:
     tf->retval = xtensa_sys_sleep_on_chan(tf);
-    kprintf("wind: syscall sleep_on_chan(chan=%u) ret_pid=%d count=%u\n", 
-            tf->arg0, tf->retval, syscall_count);
     break;
   case WIND_SYSCALL_WAKEUP_CHAN:
     tf->retval = xtensa_sys_wakeup_chan(tf);
-    kprintf("wind: syscall wakeup_chan(chan=%u) ret=%d count=%u\n", 
-            tf->arg0, tf->retval, syscall_count);
     break;
   case WIND_SYSCALL_GETPID:
     tf->retval = xtensa_sys_getpid(tf);
@@ -495,49 +490,37 @@ xtensa_trap_handle_syscall(struct xtensa_trapframe *tf)
   case WIND_SYSCALL_EXIT:
     xtensa_sys_exit(tf);
     tf->retval = 0;
-    kprintf("wind: syscall exit(code=%d) count=%u\n", (int)tf->arg0, syscall_count);
     break;
   case WIND_SYSCALL_WAIT:
     tf->retval = xtensa_sys_wait(tf);
-    if((int)tf->retval >= 0)
-      kprintf("wind: syscall wait child=%d status=%d count=%u\n", tf->retval, (int)tf->arg0, syscall_count);
     break;
   case WIND_SYSCALL_KILL:
     tf->retval = xtensa_sys_kill(tf);
-    kprintf("wind: syscall kill(pid=%d) ret=%d count=%u\n", (int)tf->arg0, (int)tf->retval, syscall_count);
     break;
   case WIND_SYSCALL_WRITE:
     tf->retval = xtensa_sys_write(tf);
-    kprintf("wind: syscall write(uoff=%u) ret=%d count=%u\n", tf->arg0, (int)tf->retval, syscall_count);
     break;
   case WIND_SYSCALL_READ:
     tf->retval = xtensa_sys_read(tf);
-    if((int)tf->retval >= 0)
-      kprintf("wind: syscall read(uoff=%u,max=%u) ret=%d count=%u\n",
-              tf->arg0, tf->arg1, (int)tf->retval, syscall_count);
     break;
   case WIND_SYSCALL_EXEC:
     tf->retval = xtensa_sys_exec(tf);
-    kprintf("wind: syscall exec ret=%d count=%u\n", (int)tf->retval, syscall_count);
     break;
   case WIND_SYSCALL_EXEC_BY_NAME:
     tf->retval = xtensa_sys_exec_by_name(tf);
-    kprintf("wind: syscall exec_by_name ret=%d count=%u\n", (int)tf->retval, syscall_count);
     break;
   case WIND_SYSCALL_SPAWN:
     tf->retval = xtensa_sys_spawn(tf);
-    kprintf("wind: syscall spawn ret=%d count=%u\n", (int)tf->retval, syscall_count);
     break;
   case WIND_SYSCALL_OPEN:
     tf->retval = xtensa_sys_open(tf);
-    kprintf("wind: syscall open(uoff=%u) ret=%d count=%u\n", tf->arg0, (int)tf->retval, syscall_count);
     break;
   case WIND_SYSCALL_CLOSE:
     tf->retval = xtensa_sys_close(tf);
     break;
   default:
-    tf->retval = -1;
-    kprintf("wind: syscall unknown no=%u count=%u\n", tf->syscall_no, syscall_count);
+    tf->retval = (uint32)-1;
+    kprintf("wind: syscall unknown no=%u\n", tf->syscall_no);
     break;
   }
 }

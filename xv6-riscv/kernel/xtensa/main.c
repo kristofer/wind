@@ -29,15 +29,8 @@ static int sched_service_ok;
 static void
 proc100_fn(struct xtensa_proc *p)
 {
-  int status;
-  int child;
-
   p->fn_state++;
-  child = wind_wait(&status);
-  if(child >= 0){
-    kprintf("wind: proc100 wait reaped child=%d status=%d\n", child, status);
-  } else if(p->killed){
-    kprintf("wind: proc100 wait killed return step=%u\n", p->fn_state);
+  if(wind_wait(0) < 0 && p->killed){
     wind_yield();
   }
 
@@ -365,7 +358,6 @@ user_shell_fn(struct xtensa_proc *p)
   char *line;
   char *cmd;
   int n;
-  int status;
   int child;
 
   if(p->fn_state == 0){
@@ -420,10 +412,9 @@ user_shell_fn(struct xtensa_proc *p)
   }
 
   if(p->fn_state == 3){
-    child = wind_wait(&status);
+    child = wind_wait(0);
     if(child < 0)
       return;
-    kprintf("wind: shell command pid=%d status=%d\n", child, status);
     p->fn_state = 1;
   }
 }
@@ -481,24 +472,17 @@ user_init_fn(struct xtensa_proc *p)
       buf[i] = (uint8)msg[i];
     buf[i] = '\0';
 
-    kprintf("wind: user_init step=1 calling wind_write\n");
     wind_write(0);
   }
   if(p->fn_state == 3){
     int child;
-    kprintf("wind: user_init step=3 spawning shell\n");
     child = wind_spawn("shell");
     if(child < 0)
       kprintf("wind: user_init spawn FAILED\n");
-    else
-      kprintf("wind: user_init spawned shell pid=%d\n", child);
   }
   if(p->fn_state >= 5){
-    int status;
-    int child = wind_wait(&status);
+    int child = wind_wait(0);
     if(child >= 0){
-      kprintf("wind: user_init reaped child=%d status=%d respawning\n",
-              child, status);
       p->fn_state = 2;  /* reset: next step → 3 → spawn again */
     }
   }
@@ -514,22 +498,11 @@ proc200_fn(struct xtensa_proc *p)
   p->fn_state++;
   if(p->fn_state == 1){
     int rc;
-    uint8 *buf;
-    uint32 j;
-    kprintf("wind: proc200 start pid=%d\n", wind_getpid());
     rc = wind_proc_uregion_alloc(64);
-    if(rc == 0){
-      buf = (uint8 *)wind_uaddr_to_kaddr(p, 0);
-      for(j = 0; j < 64; j++)
-        buf[j] = (uint8)(j & 0xFFU);
-      kprintf("wind: proc200 uregion write check buf[0]=%u buf[63]=%u\n",
-              (unsigned)buf[0], (unsigned)buf[63]);
-    } else {
+    if(rc != 0)
       kprintf("wind: proc200 uregion alloc FAILED\n");
-    }
   }
   if(p->fn_state == 2){
-    kprintf("wind: proc200 step=2 exec -> user_init_fn\n");
     wind_exec(user_init_fn);
     return;  /* must return; scheduler calls user_init_fn next round */
   }
@@ -543,7 +516,6 @@ proc201_fn(struct xtensa_proc *p)
 {
   p->fn_state++;
   if((p->fn_state % 5) == 0){
-    kprintf("wind: proc201 step=%u sleep chan=1\n", p->fn_state);
     wind_sleep_on_chan(1);
     return;
   }
@@ -558,7 +530,6 @@ proc202_fn(struct xtensa_proc *p)
 {
   p->fn_state++;
   if((p->fn_state % 3) == 0){
-    kprintf("wind: proc202 step=%u wakeup chan=1\n", p->fn_state);
     wind_wakeup_chan(1);
   }
 }
@@ -572,11 +543,9 @@ proc203_fn(struct xtensa_proc *p)
 {
   p->fn_state++;
   if(p->fn_state == 8){
-    kprintf("wind: proc203 step=%u killing proc100\n", p->fn_state);
     wind_kill(100);
   }
   if(p->fn_state >= 12){
-    kprintf("wind: proc203 step=%u exiting\n", p->fn_state);
     wind_exit(0);
     return;
   }
@@ -764,19 +733,18 @@ xtensa_kernel_poll(void)
       xtensa_sched_step();
 
     if(seconds != last_logged_second){
-      kprintf("wind: tick=%u seconds=%u current_pid=%d runnable=%u sleeping=%u zombie=%u free_pages=%u/%u\n",
-              next_tick,
-              seconds,
-              xtensa_sched_current_pid(),
-              xtensa_sched_runnable_count(),
-              xtensa_sched_sleeping_count(),
-              xtensa_sched_zombie_count(),
-              xtensa_memory_free_pages(),
-              xtensa_memory_total_pages());
-
-      if((seconds % 10U) == 0U){
-        kprintf("wind: sched dump cmd\n");
-        xtensa_sched_dump();
+      /* Only emit tick messages during the boot window (first 10 seconds).
+       * After that the console is used for interactive shell I/O. */
+      if(seconds <= 10U){
+        kprintf("wind: tick=%u seconds=%u current_pid=%d runnable=%u sleeping=%u zombie=%u free_pages=%u/%u\n",
+                next_tick,
+                seconds,
+                xtensa_sched_current_pid(),
+                xtensa_sched_runnable_count(),
+                xtensa_sched_sleeping_count(),
+                xtensa_sched_zombie_count(),
+                xtensa_memory_free_pages(),
+                xtensa_memory_total_pages());
       }
       last_logged_second = seconds;
     }
