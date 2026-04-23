@@ -3,9 +3,10 @@
 
 #ifdef WIND_ESP_IDF_APP
 #include <stdio.h>
-#include "esp_rom_uart.h"
+#include "esp_rom_serial_output.h"
 #endif
 
+#ifndef WIND_ESP_IDF_APP
 #define UART0_BASE 0x60000000U
 #define UART_FIFO_REG (UART0_BASE + 0x0U)
 #define UART_STATUS_REG (UART0_BASE + 0x1CU)
@@ -21,6 +22,7 @@ uart_txfifo_full(void)
                       UART_TXFIFO_CNT_SHIFT;
   return txfifo_cnt >= (UART_TXFIFO_SIZE - 1U);
 }
+#endif
 
 void
 uart_init(void)
@@ -57,8 +59,8 @@ int
 uart_getc_nonblock(void)
 {
 #ifdef WIND_ESP_IDF_APP
-  uint8 c = 0;
-  if(esp_rom_uart_rx_one_char(&c) == 0)
+  uint8_t c = 0;
+  if(esp_rom_output_rx_one_char(&c) == 0)
     return (int)c;
   return -1;
 #else
