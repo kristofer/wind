@@ -3,6 +3,7 @@
 
 #ifdef WIND_ESP_IDF_APP
 #include <stdio.h>
+#include "esp_rom_uart.h"
 #endif
 
 #define UART0_BASE 0x60000000U
@@ -11,6 +12,7 @@
 #define UART_TXFIFO_CNT_MASK (0xFFU << 16)
 #define UART_TXFIFO_CNT_SHIFT 16
 #define UART_TXFIFO_SIZE 128U
+#define UART_RXFIFO_CNT_MASK 0xFFU
 
 static int
 uart_txfifo_full(void)
@@ -49,4 +51,20 @@ uart_puts(const char *s)
     uart_putc(*s);
     s++;
   }
+}
+
+int
+uart_getc_nonblock(void)
+{
+#ifdef WIND_ESP_IDF_APP
+  uint8 c = 0;
+  if(esp_rom_uart_rx_one_char(&c) == 0)
+    return (int)c;
+  return -1;
+#else
+  uint32 rxfifo_cnt = xtensa_mmio_read32(UART_STATUS_REG) & UART_RXFIFO_CNT_MASK;
+  if(rxfifo_cnt == 0U)
+    return -1;
+  return (int)(xtensa_mmio_read32(UART_FIFO_REG) & 0xFFU);
+#endif
 }

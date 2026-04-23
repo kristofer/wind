@@ -8,9 +8,17 @@
 
 #define BACKSPACE 0x100
 #define CONSOLE_LINE_BUFSZ 256
+#define CONSOLE_INPUT_BUFSZ 256
+#define CONSOLE_LINE_CHAN 0x434F4E53U
 
 static char console_line[CONSOLE_LINE_BUFSZ];
 static uint32 console_len;
+static struct {
+  char buf[CONSOLE_INPUT_BUFSZ];
+  uint32 r;
+  uint32 w;
+  uint32 e;
+} console_input;
 static char digits[] = "0123456789abcdef";
 
 static void
@@ -45,6 +53,97 @@ consputc(int c)
     console_flush();
 
   console_line[console_len++] = (char)c;
+}
+
+uint32
+xtensa_console_line_chan(void)
+{
+  return CONSOLE_LINE_CHAN;
+}
+
+static void
+console_input_echo_backspace(void)
+{
+  uart_putc('\b');
+  uart_putc(' ');
+  uart_putc('\b');
+}
+
+static void
+console_input_commit_line(void)
+{
+  if(console_input.w != console_input.e){
+    console_input.w = console_input.e;
+    xtensa_sched_wakeup_chan(CONSOLE_LINE_CHAN);
+  }
+}
+
+static void
+console_input_ingest_char(int c)
+{
+  if(c < 0)
+    return;
+
+  if(c == '\r')
+    c = '\n';
+
+  if(c == '\b' || c == 0x7f){
+    if(console_input.e != console_input.w){
+      console_input.e--;
+      console_input_echo_backspace();
+    }
+    return;
+  }
+
+  if((console_input.e - console_input.r) >= CONSOLE_INPUT_BUFSZ)
+    return;
+
+  if(c == '\n'){
+    uart_putc('\r');
+    uart_putc('\n');
+  } else if(c >= 0x20 && c < 0x7f){
+    uart_putc((char)c);
+  } else {
+    return;
+  }
+
+  console_input.buf[console_input.e % CONSOLE_INPUT_BUFSZ] = (char)c;
+  console_input.e++;
+
+  if(c == '\n' || (console_input.e - console_input.r) == CONSOLE_INPUT_BUFSZ)
+    console_input_commit_line();
+}
+
+void
+xtensa_console_poll_input(void)
+{
+  int c;
+  while((c = uart_getc_nonblock()) >= 0)
+    console_input_ingest_char(c);
+}
+
+int
+xtensa_console_read(char *dst, uint32 maxlen)
+{
+  uint32 n = 0;
+
+  if(dst == 0 || maxlen == 0)
+    return -1;
+  if(console_input.r == console_input.w)
+    return -1;
+
+  while(n < maxlen && console_input.r != console_input.w){
+    char c = console_input.buf[console_input.r % CONSOLE_INPUT_BUFSZ];
+    console_input.r++;
+    dst[n++] = c;
+    if(c == '\n')
+      break;
+  }
+
+  if(console_input.r == console_input.w)
+    console_input.e = console_input.w;
+
+  return (int)n;
 }
 
 static void
@@ -152,6 +251,25 @@ kprintf(const char *fmt, ...)
 }
 
 #else
+
+uint32
+xtensa_console_line_chan(void)
+{
+  return 0;
+}
+
+void
+xtensa_console_poll_input(void)
+{
+}
+
+int
+xtensa_console_read(char *dst, uint32 maxlen)
+{
+  (void)dst;
+  (void)maxlen;
+  return -1;
+}
 
 void
 consputc(int c)

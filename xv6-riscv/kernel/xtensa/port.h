@@ -17,10 +17,12 @@
 #define WIND_SYSCALL_EXEC  9U   /* replace proc entry fn (pseudo-exec) */
 #define WIND_SYSCALL_EXEC_BY_NAME 10U  /* exec named program from embedded table */
 #define WIND_SYSCALL_SPAWN        11U  /* spawn named child process; caller continues */
+#define WIND_SYSCALL_READ         12U  /* read console line bytes into uregion offset */
 
 struct xtensa_trapframe {
   uint32 syscall_no;
   uint32 arg0;
+  uint32 arg1;
   uint32 retval;
 };
 
@@ -137,14 +139,20 @@ void wind_proc_uregion_free(void);         /* frees p->ubase/p->usz; called befo
 int  wind_exec(void (*fn)(struct xtensa_proc *));
 /* write null-terminated string from uregion byte offset to console */
 int  wind_write(uint32 uoffset);
+/* read up to maxlen bytes from console into uregion byte offset */
+int  wind_read(uint32 uoffset, uint32 maxlen);
 /* exec named program from the registered program table; caller must return */
 int  wind_exec_by_name(const char *name);
+uint32 xtensa_console_line_chan(void);
+void xtensa_console_poll_input(void);
+int  xtensa_console_read(char *dst, uint32 maxlen);
 void consputc(int c);
 int kprintf(const char *fmt, ...);
 
 void uart_init(void);
 void uart_putc(char c);
 void uart_puts(const char *s);
+int  uart_getc_nonblock(void);
 
 void timer_init(uint32 cpu_hz, uint32 tick_hz);
 uint32 timer_ticks(void);
