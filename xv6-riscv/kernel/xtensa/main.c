@@ -43,50 +43,149 @@ proc100_fn(struct xtensa_proc *p)
     wind_yield();
 }
 
-/*
- * user_shell_fn — the embedded "shell" program, target of exec_by_name.
- *
- * This is the Phase 6 payload: a named program looked up from the
- * program table and exec'd into by user_init_fn.  It is compiled into
- * the kernel binary in IROM (flash) and is therefore always executable
- * without any heap allocation for code.
- *
- * Structurally this is the xv6 sh analogue: it receives a fresh address
- * space (uregion) after exec, writes a greeting via wind_write, then
- * exits cleanly.  The full chain that exercises Phase 6 is:
- *
- *   proc200 -> exec(user_init_fn)
- *           -> exec_by_name("shell") [via program table lookup]
- *           -> user_shell_fn allocates uregion, wind_write, exit
- *           -> proc100 reaps pid=200
- */
+static int
+wind_copy_cstr_to_uregion(struct xtensa_proc *p, uint32 uoff, const char *s)
+{
+  uint8 *dst;
+  uint32 i;
+  uint32 avail;
+
+  if(p == 0 || s == 0 || p->ubase == 0 || uoff >= p->usz)
+    return -1;
+
+  dst = (uint8 *)wind_uaddr_to_kaddr(p, uoff);
+  avail = p->usz - uoff;
+  if(avail == 0)
+    return -1;
+
+  for(i = 0; i + 1U < avail && s[i] != '\0'; i++)
+    dst[i] = (uint8)s[i];
+  dst[i] = '\0';
+  return 0;
+}
+
 static void
-user_shell_fn(struct xtensa_proc *p)
+wind_write_cstr(struct xtensa_proc *p, uint32 uoff, const char *s)
+{
+  if(wind_copy_cstr_to_uregion(p, uoff, s) == 0)
+    (void)wind_write(uoff);
+}
+
+static void
+user_echo_fn(struct xtensa_proc *p)
 {
   p->fn_state++;
   if(p->fn_state == 1){
-    const char *msg = "hello from wind shell\n";
-    uint32 i;
-    uint8 *buf;
+    if(wind_proc_uregion_alloc(32) == 0)
+      wind_write_cstr(p, 0, "echo\n");
+    wind_exit(0);
+  }
+}
 
-    if(wind_proc_uregion_alloc(64) != 0){
+static void
+user_ls_fn(struct xtensa_proc *p)
+{
+  p->fn_state++;
+  if(p->fn_state == 1){
+    if(wind_proc_uregion_alloc(64) == 0)
+      wind_write_cstr(p, 0, "shell\necho\nls\ncat\nwc\n");
+    wind_exit(0);
+  }
+}
+
+static void
+user_cat_fn(struct xtensa_proc *p)
+{
+  p->fn_state++;
+  if(p->fn_state == 1){
+    if(wind_proc_uregion_alloc(64) == 0)
+      wind_write_cstr(p, 0, "wind: romfs demo payload\n");
+    wind_exit(0);
+  }
+}
+
+static void
+user_wc_fn(struct xtensa_proc *p)
+{
+  p->fn_state++;
+  if(p->fn_state == 1){
+    if(wind_proc_uregion_alloc(32) == 0)
+      wind_write_cstr(p, 0, "1 4 24\n");
+    wind_exit(0);
+  }
+}
+
+static void
+user_shell_fn(struct xtensa_proc *p)
+{
+  char *line;
+  char *cmd;
+  char *end;
+  int n;
+  int status;
+  int child;
+
+  if(p->fn_state == 0){
+    if(wind_proc_uregion_alloc(128) != 0){
       kprintf("wind: user_shell uregion alloc FAILED\n");
       wind_exit(1);
       return;
     }
-    buf = (uint8 *)wind_uaddr_to_kaddr(p, 0);
-    for(i = 0; msg[i] != '\0'; i++)
-      buf[i] = (uint8)msg[i];
-    buf[i] = '\0';
-
-    kprintf("wind: user_shell step=1 calling wind_write\n");
-    wind_write(0);
+    p->fn_state = 1;
   }
-  if(p->fn_state >= 3){
-    kprintf("wind: user_shell step=%u exiting\n", p->fn_state);
-    wind_proc_uregion_free();
-    wind_exit(0);
+
+  if(p->fn_state == 1){
+    wind_write_cstr(p, 0, "$ ");
+    p->fn_state = 2;
     return;
+  }
+
+  if(p->fn_state == 2){
+    n = wind_read(32, 63);
+    if(n < 0)
+      return;
+    if(n == 0){
+      p->fn_state = 1;
+      return;
+    }
+
+    line = (char *)wind_uaddr_to_kaddr(p, 32);
+    if(line[n - 1] != '\n'){
+      wind_write_cstr(p, 0, "sh: line too long\n");
+      p->fn_state = 1;
+      return;
+    }
+    line[n - 1] = '\0';
+
+    cmd = line;
+    while(*cmd == ' ' || *cmd == '\t')
+      cmd++;
+    end = cmd;
+    while(*end != '\0' && *end != ' ' && *end != '\t')
+      end++;
+    *end = '\0';
+
+    if(*cmd == '\0'){
+      p->fn_state = 1;
+      return;
+    }
+
+    child = wind_spawn(cmd);
+    if(child < 0){
+      wind_write_cstr(p, 0, "sh: command not found\n");
+      p->fn_state = 1;
+      return;
+    }
+    p->fn_state = 3;
+    return;
+  }
+
+  if(p->fn_state == 3){
+    child = wind_wait(&status);
+    if(child < 0)
+      return;
+    kprintf("wind: shell command pid=%d status=%d\n", child, status);
+    p->fn_state = 1;
   }
 }
 
@@ -97,6 +196,10 @@ user_shell_fn(struct xtensa_proc *p)
  */
 static const struct wind_program wind_programs[] = {
   { "shell", user_shell_fn },
+  { "echo", user_echo_fn },
+  { "ls", user_ls_fn },
+  { "cat", user_cat_fn },
+  { "wc", user_wc_fn },
 };
 
 /*
