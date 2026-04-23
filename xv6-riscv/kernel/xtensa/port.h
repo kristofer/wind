@@ -77,6 +77,8 @@ enum wind_romfs_entry_kind {
   WIND_ROMFS_DEV  = 3,  /* simple device node */
 };
 
+#define WIND_ROMFS_DEV_CONSOLE_PATH "/dev/console"
+
 struct wind_romfs_entry {
   const char *path;                   /* absolute path, e.g. "/bin/shell" */
   enum wind_romfs_entry_kind kind;

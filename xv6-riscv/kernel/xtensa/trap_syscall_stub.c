@@ -142,6 +142,7 @@ xtensa_sys_exec(struct xtensa_trapframe *tf)
  */
 #define WIND_ROMFS_FD_MAX 8U
 #define WIND_ROMFS_PATH_MAX 64U
+#define WIND_ROMFS_MIN_PATH_BUFSZ 2U
 
 struct wind_romfs_fd_state {
   const struct wind_romfs_entry *entry;
@@ -174,7 +175,7 @@ xtensa_romfs_resolve_exec_path(const char *name_or_path, char *dst, uint32 dst_l
   uint32 i = 0;
   uint32 j = 0;
 
-  if(name_or_path == 0 || dst == 0 || dst_len < 2U)
+  if(name_or_path == 0 || dst == 0 || dst_len < WIND_ROMFS_MIN_PATH_BUFSZ)
     return -1;
 
   if(name_or_path[0] == '/'){
@@ -202,14 +203,9 @@ xtensa_romfs_resolve_exec_path(const char *name_or_path, char *dst, uint32 dst_l
 void
 xtensa_romfs_catalog_set(const struct wind_romfs_entry *table, uint32 count)
 {
-  uint32 i;
-
   romfs_table = table;
   romfs_table_count = count;
-  for(i = 0; i < WIND_ROMFS_FD_MAX; i++){
-    romfs_fds[i].entry = 0;
-    romfs_fds[i].off = 0;
-  }
+  memset(romfs_fds, 0, sizeof(romfs_fds));
   kprintf("wind: romfs catalog registered count=%u\n", count);
 }
 
@@ -237,18 +233,24 @@ int
 xtensa_romfs_read(int fd, char *dst, uint32 maxlen)
 {
   const struct wind_romfs_entry *entry;
-  uint32 i;
+  const char *src;
+  uint32 fdu;
   uint32 n;
 
-  if(fd < 0 || (uint32)fd >= WIND_ROMFS_FD_MAX || dst == 0 || maxlen == 0)
+  if(fd < 0 || dst == 0)
     return -1;
+  fdu = (uint32)fd;
+  if(fdu >= WIND_ROMFS_FD_MAX)
+    return -1;
+  if(maxlen == 0)
+    return 0;
 
-  entry = romfs_fds[(uint32)fd].entry;
+  entry = romfs_fds[fdu].entry;
   if(entry == 0)
     return -1;
 
   if(entry->kind == WIND_ROMFS_DEV){
-    if(strcmp(entry->path, "/dev/console") == 0)
+    if(strcmp(entry->path, WIND_ROMFS_DEV_CONSOLE_PATH) == 0)
       return xtensa_console_read(dst, maxlen);
     return -1;
   }
@@ -256,16 +258,16 @@ xtensa_romfs_read(int fd, char *dst, uint32 maxlen)
   if(entry->kind != WIND_ROMFS_DATA || entry->data == 0)
     return -1;
 
-  if(romfs_fds[(uint32)fd].off >= entry->data_len)
+  if(romfs_fds[fdu].off >= entry->data_len)
     return 0;
 
-  n = entry->data_len - romfs_fds[(uint32)fd].off;
+  n = entry->data_len - romfs_fds[fdu].off;
   if(n > maxlen)
     n = maxlen;
 
-  for(i = 0; i < n; i++)
-    dst[i] = entry->data[romfs_fds[(uint32)fd].off + i];
-  romfs_fds[(uint32)fd].off += n;
+  src = entry->data + romfs_fds[fdu].off;
+  memcpy(dst, src, n);
+  romfs_fds[fdu].off += n;
   return (int)n;
 }
 
