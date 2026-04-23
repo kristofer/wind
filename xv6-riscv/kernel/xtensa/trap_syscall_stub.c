@@ -230,9 +230,10 @@ xtensa_romfs_open(const char *path)
 }
 
 int
-xtensa_romfs_read(int fd, char *dst, uint32 maxlen)
+xtensa_romfs_read(int fd, void *dst_void, uint32 maxlen)
 {
   const struct wind_romfs_entry *entry;
+  char *dst = (char *)dst_void;
   const char *src;
   uint32 fdu;
   uint32 n;
@@ -258,8 +259,11 @@ xtensa_romfs_read(int fd, char *dst, uint32 maxlen)
   if(entry->kind != WIND_ROMFS_DATA || entry->data == 0)
     return -1;
 
-  if(romfs_fds[fdu].off >= entry->data_len)
+  if(romfs_fds[fdu].off >= entry->data_len){
+    romfs_fds[fdu].entry = 0;
+    romfs_fds[fdu].off = 0;
     return 0;
+  }
 
   n = entry->data_len - romfs_fds[fdu].off;
   if(n > maxlen)
@@ -269,6 +273,22 @@ xtensa_romfs_read(int fd, char *dst, uint32 maxlen)
   memcpy(dst, src, n);
   romfs_fds[fdu].off += n;
   return (int)n;
+}
+
+int
+xtensa_romfs_close(int fd)
+{
+  uint32 fdu;
+
+  if(fd < 0)
+    return -1;
+  fdu = (uint32)fd;
+  if(fdu >= WIND_ROMFS_FD_MAX)
+    return -1;
+
+  romfs_fds[fdu].entry = 0;
+  romfs_fds[fdu].off = 0;
+  return 0;
 }
 
 int

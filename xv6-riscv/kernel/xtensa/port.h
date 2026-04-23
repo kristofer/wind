@@ -89,7 +89,8 @@ struct wind_romfs_entry {
 
 void xtensa_romfs_catalog_set(const struct wind_romfs_entry *table, uint32 count);
 int  xtensa_romfs_open(const char *path);
-int  xtensa_romfs_read(int fd, char *dst, uint32 maxlen);
+int  xtensa_romfs_read(int fd, void *dst, uint32 maxlen);
+int  xtensa_romfs_close(int fd);
 int  xtensa_romfs_exec_path(const char *path);
 int  xtensa_sched_create_child(void (*fn)(struct xtensa_proc *)); /* spawn child of current proc */
 

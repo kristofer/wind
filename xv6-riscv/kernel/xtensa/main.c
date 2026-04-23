@@ -203,7 +203,7 @@ static const struct wind_romfs_entry wind_romfs_catalog[] = {
   { "/bin/ls",    WIND_ROMFS_EXEC, 0, 0, user_ls_fn    },
   { "/bin/cat",   WIND_ROMFS_EXEC, 0, 0, user_cat_fn   },
   { "/bin/wc",    WIND_ROMFS_EXEC, 0, 0, user_wc_fn    },
-  { "/etc/motd",  WIND_ROMFS_DATA, wind_romfs_motd, sizeof(wind_romfs_motd) - 1U /* exclude NUL */, 0 },
+  { "/etc/motd",  WIND_ROMFS_DATA, wind_romfs_motd, sizeof(wind_romfs_motd) - 1U /* exclude NUL terminator from data_len */, 0 },
   { WIND_ROMFS_DEV_CONSOLE_PATH, WIND_ROMFS_DEV, 0, 0, 0 },
 };
 
