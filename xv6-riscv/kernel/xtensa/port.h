@@ -15,6 +15,8 @@
 #define WIND_SYSCALL_KILL 7U
 #define WIND_SYSCALL_WRITE 8U   /* write null-terminated string from uregion offset to console */
 #define WIND_SYSCALL_EXEC  9U   /* replace proc entry fn (pseudo-exec) */
+#define WIND_SYSCALL_EXEC_BY_NAME 10U  /* exec named program from embedded table */
+#define WIND_SYSCALL_SPAWN        11U  /* spawn named child process; caller continues */
 
 struct xtensa_trapframe {
   uint32 syscall_no;
@@ -67,7 +69,26 @@ struct xtensa_proc {
   uint32 usz;    /* size of user region in bytes */
 };
 
-void xtensa_context_switch(struct xtensa_context *old, struct xtensa_context *new);
+/*
+ * Program table — the embedded "filesystem" for Phase 6.
+ *
+ * Each entry maps a name to a kernel entry function.  wind_exec_by_name
+ * looks up the table and calls xtensa_sched_exec_current, giving exec()
+ * semantics without a real filesystem: the "program image" is a C
+ * function compiled directly into the kernel binary in IROM (flash),
+ * so it is always executable and costs no heap allocation.
+ *
+ * Register the table once at boot via xtensa_program_table_set.
+ * Later phases can extend this to load from a flash partition.
+ */
+struct wind_program {
+  const char *name;             /* program name, e.g. "init", "shell" */
+  void (*fn)(struct xtensa_proc *);  /* kernel entry fn (lives in IROM) */
+};
+
+void xtensa_program_table_set(const struct wind_program *table, uint32 count);
+int  xtensa_sched_create_child(void (*fn)(struct xtensa_proc *)); /* spawn child of current proc */
+
 void xtensa_kernel_init(void);
 void xtensa_kernel_poll(void);
 void xtensa_kernel_main(void);
@@ -99,6 +120,7 @@ int xtensa_sched_kill_pid(int pid);
 void xtensa_sched_dump(void);
 void xtensa_trap_init(void);
 void xtensa_trap_handle_syscall(struct xtensa_trapframe *tf);
+int  wind_spawn(const char *name); /* spawn named child; caller stays alive; returns child pid */
 
 /* kernel proc API — call from within a proc's fn */
 void wind_yield(void);
@@ -115,6 +137,8 @@ void wind_proc_uregion_free(void);         /* frees p->ubase/p->usz; called befo
 int  wind_exec(void (*fn)(struct xtensa_proc *));
 /* write null-terminated string from uregion byte offset to console */
 int  wind_write(uint32 uoffset);
+/* exec named program from the registered program table; caller must return */
+int  wind_exec_by_name(const char *name);
 void consputc(int c);
 int kprintf(const char *fmt, ...);
 

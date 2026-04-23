@@ -1,7 +1,7 @@
 {
     "version":            "1.3",
     "project_name":       "wind_esp32s3",
-    "project_version":    "cd5b11a-dirty",
+    "project_version":    "600f36e-dirty",
     "project_path":       "/Users/kryounger/LocalProjects/wind/xv6-riscv/esp32s3-idf",
     "idf_path":           "/Users/kryounger/esp/esp-idf",
     "build_dir":          "/Users/kryounger/LocalProjects/wind/xv6-riscv/esp32s3-idf/build",

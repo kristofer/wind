@@ -8,7 +8,7 @@
 extern void kfree(void *);
 #endif
 
-#define WIND_SCHED_SLOTS 5U
+#define WIND_SCHED_SLOTS 8U
 #define WIND_WAIT_CHAN_BASE 0x80000000U
 
 static struct xtensa_proc procs[WIND_SCHED_SLOTS];
@@ -18,6 +18,7 @@ static uint32 sleeping_count;
 static uint32 zombie_count;
 static int last_scheduled_pid;
 static int preferred_wakeup_pid;
+static int next_pid;  /* monotonic counter for spawn-assigned pids */
 
 static uint32
 wait_chan_for_parent(int parent_pid)
@@ -96,6 +97,7 @@ xtensa_sched_init(void)
   zombie_count = 0;
   last_scheduled_pid = -1;
   preferred_wakeup_pid = -1;
+  next_pid = 300;
   sched_lock_exit();
 }
 
@@ -166,6 +168,38 @@ xtensa_sched_create_proc_fn_parent(int pid, int parent_pid, void (*fn)(struct xt
   }
   sched_lock_exit();
   return 0;
+}
+
+/*
+ * xtensa_sched_create_child — spawn a child of the current proc.
+ *
+ * Auto-assigns a pid from the monotonic next_pid counter and creates
+ * a new proc with parent = current proc's pid.  Returns the child's
+ * pid on success, -1 on error (no free slot, no current proc, null fn).
+ * This is the scheduling primitive underlying wind_spawn().
+ */
+int
+xtensa_sched_create_child(void (*fn)(struct xtensa_proc *))
+{
+  int parent_pid;
+  int child_pid;
+
+  if(fn == 0)
+    return -1;
+
+  sched_lock_enter();
+  if(current_index < 0){
+    sched_lock_exit();
+    return -1;
+  }
+  parent_pid = procs[(uint32)current_index].pid;
+  child_pid  = next_pid++;
+  sched_lock_exit();
+
+  if(xtensa_sched_create_proc_fn_parent(child_pid, parent_pid, fn) != 0)
+    return -1;
+  kprintf("wind: sched spawn child_pid=%d parent=%d\n", child_pid, parent_pid);
+  return child_pid;
 }
 
 void

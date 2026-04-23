@@ -1,6 +1,8 @@
 #include "kernel/types.h"
 #include "kernel/xtensa/port.h"
 
+#include <string.h>
+
 static uint32 syscall_count;
 
 static int
@@ -107,6 +109,88 @@ xtensa_sys_exec(struct xtensa_trapframe *tf)
     (void (*)(struct xtensa_proc *))(uint32)tf->arg0;
   return xtensa_sched_exec_current(fn);
 }
+/*
+ * Program table — set once at boot by xtensa_program_table_set.
+ * Looked up by xtensa_sys_exec_by_name when a proc calls exec_by_name.
+ */
+static const struct wind_program *prog_table;
+static uint32 prog_table_count;
+
+void
+xtensa_program_table_set(const struct wind_program *table, uint32 count)
+{
+  prog_table       = table;
+  prog_table_count = count;
+  kprintf("wind: program table registered count=%u\n", count);
+}
+
+/*
+ * xtensa_sys_exec_by_name — WIND_SYSCALL_EXEC_BY_NAME
+ *
+ * arg0 is a uregion byte offset containing the null-terminated program
+ * name.  The kernel resolves it to a kernel pointer, looks up the
+ * program table, and calls xtensa_sched_exec_current with the matching
+ * entry function.  This is the exec(path,...) system call analogue:
+ * the proc supplies a "user virtual address" for the path string, and
+ * the kernel translates it before touching the bytes — exactly the
+ * copyinstr() step in xv6's sys_exec.
+ */
+static int
+xtensa_sys_exec_by_name(struct xtensa_trapframe *tf)
+{
+  struct xtensa_proc *p = xtensa_sched_current_proc();
+  uint32 uoffset = tf->arg0;
+  const char *name;
+  uint32 i;
+
+  if(p == 0 || p->ubase == 0 || uoffset >= p->usz)
+    return -1;
+
+  name = (const char *)wind_uaddr_to_kaddr(p, uoffset);
+
+  if(prog_table == 0)
+    return -1;
+  for(i = 0; i < prog_table_count; i++){
+    if(strcmp(prog_table[i].name, name) == 0)
+      return xtensa_sched_exec_current(prog_table[i].fn);
+  }
+  kprintf("wind: exec_by_name: program '%s' not found\n", name);
+  return -1;
+}
+
+/*
+ * xtensa_sys_spawn — WIND_SYSCALL_SPAWN
+ *
+ * Resolves a program name from the calling proc's uregion at offset
+ * tf->arg0, looks it up in the program table, and creates a new child
+ * proc running the matching entry function via xtensa_sched_create_child.
+ * Returns the child's pid on success, -1 on error.
+ *
+ * Unlike exec_by_name the calling proc is NOT replaced; it continues
+ * running and should call wind_wait() to reap the child.
+ * This is the fork()+exec() primitive for the flat model.
+ */
+static int
+xtensa_sys_spawn(struct xtensa_trapframe *tf)
+{
+  struct xtensa_proc *p = xtensa_sched_current_proc();
+  uint32 uoffset = tf->arg0;
+  const char *name;
+  uint32 i;
+
+  if(p == 0 || p->ubase == 0 || uoffset >= p->usz)
+    return -1;
+
+  name = (const char *)wind_uaddr_to_kaddr(p, uoffset);
+  if(prog_table == 0)
+    return -1;
+  for(i = 0; i < prog_table_count; i++){
+    if(strcmp(prog_table[i].name, name) == 0)
+      return xtensa_sched_create_child(prog_table[i].fn);
+  }
+  kprintf("wind: spawn: program '%s' not found\n", name);
+  return -1;
+}
 void
 xtensa_trap_init(void)
 {
@@ -160,6 +244,14 @@ xtensa_trap_handle_syscall(struct xtensa_trapframe *tf)
   case WIND_SYSCALL_EXEC:
     tf->retval = xtensa_sys_exec(tf);
     kprintf("wind: syscall exec ret=%d count=%u\n", (int)tf->retval, syscall_count);
+    break;
+  case WIND_SYSCALL_EXEC_BY_NAME:
+    tf->retval = xtensa_sys_exec_by_name(tf);
+    kprintf("wind: syscall exec_by_name ret=%d count=%u\n", (int)tf->retval, syscall_count);
+    break;
+  case WIND_SYSCALL_SPAWN:
+    tf->retval = xtensa_sys_spawn(tf);
+    kprintf("wind: syscall spawn ret=%d count=%u\n", (int)tf->retval, syscall_count);
     break;
   default:
     tf->retval = -1;
@@ -300,6 +392,85 @@ wind_exec(void (*fn)(struct xtensa_proc *))
   struct xtensa_trapframe tf;
   tf.syscall_no = WIND_SYSCALL_EXEC;
   tf.arg0 = (uint32)fn;
+  tf.retval = (uint32)-1;
+  xtensa_trap_handle_syscall(&tf);
+  return (int)tf.retval;
+}
+
+/*
+ * wind_exec_by_name — exec named program from the program table.
+ *
+ * Writes name into the calling proc's uregion (allocating one if absent),
+ * then issues WIND_SYSCALL_EXEC_BY_NAME so the kernel copies the name
+ * from the proc's flat region via wind_uaddr_to_kaddr, exactly as
+ * sys_exec would use copyinstr().  Caller MUST return immediately.
+ *
+ * If the proc has no uregion a temporary 64-byte one is allocated for
+ * the duration of the syscall.  It is freed by exec_current before the
+ * new fn's first invocation.
+ */
+int
+wind_exec_by_name(const char *name)
+{
+  struct xtensa_proc *p = xtensa_sched_current_proc();
+  struct xtensa_trapframe tf;
+  uint8 *buf;
+  uint32 i;
+  int free_after = 0;
+
+  if(p == 0 || name == 0)
+    return -1;
+
+  if(p->ubase == 0){
+    if(xtensa_user_alloc(p, 64) != 0)
+      return -1;
+    free_after = 1;
+  }
+
+  buf = (uint8 *)wind_uaddr_to_kaddr(p, 0);
+  for(i = 0; name[i] != '\0' && i < (p->usz - 1U); i++)
+    buf[i] = (uint8)name[i];
+  buf[i] = '\0';
+
+  tf.syscall_no = WIND_SYSCALL_EXEC_BY_NAME;
+  tf.arg0 = 0;  /* uregion offset 0 */
+  tf.retval = (uint32)-1;
+  xtensa_trap_handle_syscall(&tf);
+
+  /* exec_current frees the uregion; no need to free_after on success */
+  if((int)tf.retval < 0 && free_after)
+    xtensa_user_free(p);
+
+  return (int)tf.retval;
+}
+
+/*
+ * wind_spawn — create a child process running the named program.
+ *
+ * Writes name into the calling proc's uregion (which must already be
+ * allocated), issues WIND_SYSCALL_SPAWN, and returns the child's pid on
+ * success or -1 on failure.  The calling proc continues running after
+ * spawn returns; it should call wind_wait() to reap the child when it
+ * exits.  This is the xv6 fork()+exec() equivalent for the flat model.
+ */
+int
+wind_spawn(const char *name)
+{
+  struct xtensa_proc *p = xtensa_sched_current_proc();
+  struct xtensa_trapframe tf;
+  uint8 *buf;
+  uint32 i;
+
+  if(p == 0 || p->ubase == 0 || name == 0)
+    return -1;
+
+  buf = (uint8 *)wind_uaddr_to_kaddr(p, 0);
+  for(i = 0; name[i] != '\0' && i < (p->usz - 1U); i++)
+    buf[i] = (uint8)name[i];
+  buf[i] = '\0';
+
+  tf.syscall_no = WIND_SYSCALL_SPAWN;
+  tf.arg0 = 0;
   tf.retval = (uint32)-1;
   xtensa_trap_handle_syscall(&tf);
   return (int)tf.retval;

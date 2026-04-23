@@ -44,30 +44,84 @@ proc100_fn(struct xtensa_proc *p)
 }
 
 /*
- * user_init_fn — pseudo-user entry point, the xv6 init analogue.
+ * user_shell_fn — the embedded "shell" program, target of exec_by_name.
  *
- * This is the target of proc200's wind_exec call.  It demonstrates the
- * full Phase 5 chain:
- *   exec -> allocate uregion -> write string via wind_write (uregion
- *   offset resolved to kernel pointer inside sys_write) -> exit
+ * This is the Phase 6 payload: a named program looked up from the
+ * program table and exec'd into by user_init_fn.  It is compiled into
+ * the kernel binary in IROM (flash) and is therefore always executable
+ * without any heap allocation for code.
  *
- * From the kernel's perspective this fn is just another kernel task, but
- * structurally it mirrors what a user-mode init process would do: receive
- * an empty address space after exec, populate it, issue write(1,...),
- * and call exit(0).
+ * Structurally this is the xv6 sh analogue: it receives a fresh address
+ * space (uregion) after exec, writes a greeting via wind_write, then
+ * exits cleanly.  The full chain that exercises Phase 6 is:
+ *
+ *   proc200 -> exec(user_init_fn)
+ *           -> exec_by_name("shell") [via program table lookup]
+ *           -> user_shell_fn allocates uregion, wind_write, exit
+ *           -> proc100 reaps pid=200
+ */
+static void
+user_shell_fn(struct xtensa_proc *p)
+{
+  p->fn_state++;
+  if(p->fn_state == 1){
+    const char *msg = "hello from wind shell\n";
+    uint32 i;
+    uint8 *buf;
+
+    if(wind_proc_uregion_alloc(64) != 0){
+      kprintf("wind: user_shell uregion alloc FAILED\n");
+      wind_exit(1);
+      return;
+    }
+    buf = (uint8 *)wind_uaddr_to_kaddr(p, 0);
+    for(i = 0; msg[i] != '\0'; i++)
+      buf[i] = (uint8)msg[i];
+    buf[i] = '\0';
+
+    kprintf("wind: user_shell step=1 calling wind_write\n");
+    wind_write(0);
+  }
+  if(p->fn_state >= 3){
+    kprintf("wind: user_shell step=%u exiting\n", p->fn_state);
+    wind_proc_uregion_free();
+    wind_exit(0);
+    return;
+  }
+}
+
+/*
+ * Embedded program table — the Phase 6 "filesystem".
+ * Maps names to kernel entry functions compiled into IROM.
+ * Registered with xtensa_program_table_set at boot.
+ */
+static const struct wind_program wind_programs[] = {
+  { "shell", user_shell_fn },
+};
+
+/*
+ * user_init_fn — real init analogue for Phase 7.
+ *
+ * Mirrors xv6 init(8): allocates a user region once, then enters an
+ * infinite spawn→wait→respawn loop.  "shell" is spawned as a child;
+ * when it exits, init reaps it and immediately spawns a fresh copy.
+ * Init never exits: it is the root process and the parent of all
+ * dynamically-created procs.
+ *
+ * Phase 7 vs Phase 6: exec_by_name replaced init itself with the shell
+ * (init disappeared).  Now init stays alive and supervises the shell,
+ * restarting it on each exit — the canonical xv6 init behaviour.
  */
 static void
 user_init_fn(struct xtensa_proc *p)
 {
   p->fn_state++;
   if(p->fn_state == 1){
-    int rc;
     const char *msg = "hello from user_init\n";
     uint32 i;
     uint8 *buf;
 
-    rc = wind_proc_uregion_alloc(64);
-    if(rc != 0){
+    if(wind_proc_uregion_alloc(64) != 0){
       kprintf("wind: user_init uregion alloc FAILED\n");
       wind_exit(1);
       return;
@@ -78,13 +132,25 @@ user_init_fn(struct xtensa_proc *p)
     buf[i] = '\0';
 
     kprintf("wind: user_init step=1 calling wind_write\n");
-    wind_write(0);   /* write from uregion offset 0 */
+    wind_write(0);
   }
-  if(p->fn_state >= 4){
-    kprintf("wind: user_init step=%u exiting\n", p->fn_state);
-    wind_proc_uregion_free();
-    wind_exit(0);
-    return;
+  if(p->fn_state == 3){
+    int child;
+    kprintf("wind: user_init step=3 spawning shell\n");
+    child = wind_spawn("shell");
+    if(child < 0)
+      kprintf("wind: user_init spawn FAILED\n");
+    else
+      kprintf("wind: user_init spawned shell pid=%d\n", child);
+  }
+  if(p->fn_state >= 5){
+    int status;
+    int child = wind_wait(&status);
+    if(child >= 0){
+      kprintf("wind: user_init reaped child=%d status=%d respawning\n",
+              child, status);
+      p->fn_state = 2;  /* reset: next step → 3 → spawn again */
+    }
   }
 }
 
@@ -219,6 +285,8 @@ xtensa_sched_service_bootstrap(void)
 
   sched_service_ok = 1;
   xtensa_sched_init();
+  xtensa_program_table_set(wind_programs,
+                           sizeof(wind_programs) / sizeof(wind_programs[0]));
   for(i = 0; i < (sizeof(boot_procs) / sizeof(boot_procs[0])); i++){
     if(xtensa_sched_create_proc_fn_parent(boot_procs[i].pid,
                                           boot_procs[i].ppid,
@@ -333,32 +401,36 @@ xtensa_kernel_poll(void)
 {
 #ifdef WIND_ESP_IDF_APP
   uint32 now = timer_ticks();
-  uint32 seconds = now / XTENSA_TICK_HZ;
+  while(last_ticks != now){
+    uint32 next_tick = last_ticks + 1U;
+    uint32 seconds = next_tick / XTENSA_TICK_HZ;
 
-  if(now != last_ticks && seconds != last_logged_second){
+    /* One scheduling quantum per timer tick: preemptive round-robin. */
     xtensa_sched_step();
     xtensa_sched_run_current();
-    /* if the proc slept or exited, pick the next runnable immediately */
+    /* If proc slept/exited during its quantum, select a replacement now. */
     if(xtensa_sched_current_pid() < 0)
       xtensa_sched_step();
 
-        kprintf("wind: tick=%u seconds=%u current_pid=%d runnable=%u sleeping=%u zombie=%u free_pages=%u/%u\n",
-            now,
-            seconds,
-            xtensa_sched_current_pid(),
-            xtensa_sched_runnable_count(),
-            xtensa_sched_sleeping_count(),
-          xtensa_sched_zombie_count(),
-            xtensa_memory_free_pages(),
-            xtensa_memory_total_pages());
+    if(seconds != last_logged_second){
+      kprintf("wind: tick=%u seconds=%u current_pid=%d runnable=%u sleeping=%u zombie=%u free_pages=%u/%u\n",
+              next_tick,
+              seconds,
+              xtensa_sched_current_pid(),
+              xtensa_sched_runnable_count(),
+              xtensa_sched_sleeping_count(),
+              xtensa_sched_zombie_count(),
+              xtensa_memory_free_pages(),
+              xtensa_memory_total_pages());
 
-    if((seconds % 10U) == 0U){
-      kprintf("wind: sched dump cmd\n");
-      xtensa_sched_dump();
+      if((seconds % 10U) == 0U){
+        kprintf("wind: sched dump cmd\n");
+        xtensa_sched_dump();
+      }
+      last_logged_second = seconds;
     }
 
-    last_ticks = now;
-    last_logged_second = seconds;
+    last_ticks = next_tick;
   }
 #else
   uint32 now = timer_ticks();
