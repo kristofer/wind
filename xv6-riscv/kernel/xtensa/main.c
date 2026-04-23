@@ -214,7 +214,7 @@ user_wc_fn(struct xtensa_proc *p)
           }
         }
         (void)xtensa_romfs_close(fd);
-        snprintf(out, WIND_ROMFS_IO_BUFSZ, "%u %u %u %s\n", lines, words, bytes, path);
+        snprintf(out, WIND_ROMFS_IO_BUFSZ, "%u %u %u %.30s\n", lines, words, bytes, path);
         (void)wind_write(WIND_ROMFS_IO_BUFSZ);
       }
     }
