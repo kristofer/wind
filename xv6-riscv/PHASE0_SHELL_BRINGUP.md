@@ -6,10 +6,13 @@ This phase intentionally locks the current scheduler/spawn/wait behavior as a kn
 
 The baseline is considered valid when captured serial logs contain:
 
+- `wind: page allocator ready: N free pages` + `wind: allocator selftest PASS`
+- `wind: romfs catalog registered count=N`
 - `wind: scheduler bootstrap PASS`
-- init/shell lifecycle (`user_init` spawn, `user_shell` run/exit, parent reap + respawn)
-- sleep/wakeup flow on channel 1 (`proc201` + `proc202` + syscall logs)
-- periodic tick logs with `free_pages=X/Y` and stable totals
+- `wind: trap/syscall scaffold ready`
+- Tick messages with `free_pages=X/Y` from the boot window (first 10 seconds), stable totals
+
+Note: per-syscall and per-scheduler-step debug messages are intentionally removed as of Phase 8 to allow the serial console to be used for interactive shell I/O.
 
 ## Repeatable smoke test
 
@@ -31,6 +34,17 @@ make esp32s3-monitor ESP_PORT=/dev/ttyACM0 | tee /tmp/wind-phase0.log
 
 ```bash
 python3 /home/runner/work/wind/wind/xv6-riscv/test-phase0-shell.py /tmp/wind-phase0.log
+```
+
+## Phase 8 regression suite
+
+For full shell-interactive testing (Phase 8):
+
+```bash
+# Capture a log that includes interactive shell use
+make esp32s3-monitor ESP_PORT=/dev/ttyACM0 | tee /tmp/wind-phase8.log
+# (type some commands at the $ prompt, then stop capture)
+python3 /home/runner/work/wind/wind/xv6-riscv/test-phase8-shell.py /tmp/wind-phase8.log
 ```
 
 ## Command-level acceptance tests (defined now for later phases)

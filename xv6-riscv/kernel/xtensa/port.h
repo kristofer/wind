@@ -155,6 +155,45 @@ int  wind_exec_by_name(const char *name);
 int  wind_open(const char *path);
 int  wind_close(int fd);
 uint32 xtensa_console_line_chan(void);
+
+/*
+ * VFS migration seam — Phase 8 forward-compatibility declarations.
+ *
+ * The current filesystem substrate is a read-only ROMFS backed by entries
+ * in app flash (xtensa_romfs_*).  The declarations below define the shim
+ * boundary that a future VFS layer (SPIFFS, LittleFS, or a full inode
+ * model) must satisfy to plug in without changing the shell ABI.
+ *
+ * Rules for implementors:
+ *   - wind_fs_open / wind_fs_read / wind_fs_write / wind_fs_close mirror
+ *     the POSIX open/read/write/close contract at the kernel level.
+ *   - wind_fs_stat returns a minimal stat-like structure (size, kind).
+ *   - wind_fs_readdir iterates directory entries by name.
+ *   - All paths are absolute, null-terminated, kernel-address strings.
+ *   - The shell's spawn/exec path (wind_spawn, wind_exec_by_name) calls
+ *     wind_fs_open on the resolved binary path; the returned fd is passed
+ *     to a loader that maps the image into the proc's user region.
+ *   - Returning -1 from any operation is the canonical "not supported /
+ *     not found" sentinel; callers must not assume errno.
+ *
+ * Current ROMFS shim wires these to xtensa_romfs_* in trap_syscall_stub.c.
+ * Replace the shim body to swap in a new backend; shell ABI is unaffected.
+ */
+struct wind_fs_stat {
+  uint32 size;            /* byte size; 0 for executables and device nodes */
+  int    is_dir;          /* non-zero if entry is a directory */
+  int    is_exec;         /* non-zero if entry is an executable */
+  int    is_dev;          /* non-zero if entry is a device node */
+};
+
+/* VFS shim API — currently forwarded to ROMFS; replace for next FS step */
+int  wind_fs_open(const char *path);
+int  wind_fs_read(int fd, void *buf, uint32 len);
+int  wind_fs_write(int fd, const void *buf, uint32 len);
+int  wind_fs_close(int fd);
+int  wind_fs_stat(const char *path, struct wind_fs_stat *out);
+int  wind_fs_readdir(const char *path, uint32 index, char *name_out, uint32 name_max);
+
 void xtensa_console_poll_input(void);
 int  xtensa_console_read(char *dst, uint32 maxlen);
 void consputc(int c);

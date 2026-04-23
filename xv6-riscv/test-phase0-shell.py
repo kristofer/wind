@@ -10,21 +10,11 @@ REQUIRED_PATTERNS = {
         r"wind: scheduler bootstrap PASS",
         r"wind: trap/syscall scaffold ready",
     ],
-    "spawn_wait_reap_lifecycle": [
-        r"wind: user_init step=3 spawning shell",
-        r"wind: user_init spawned shell pid=\d+",
-        r"wind: user_shell step=1 calling wind_write",
-        r"wind: user_shell step=\d+ exiting",
-        r"wind: user_init reaped child=\d+ status=\d+ respawning",
+    "romfs_init": [
+        r"wind: romfs catalog registered count=\d+",
     ],
-    "sleep_wakeup": [
-        r"wind: proc201 step=\d+ sleep chan=1",
-        r"wind: proc202 step=\d+ wakeup chan=1",
-        r"wind: syscall sleep_on_chan\(chan=1\) ret_pid=\d+ count=\d+",
-        r"wind: syscall wakeup_chan\(chan=1\) ret=-?\d+ count=\d+",
-    ],
-    "wait_path": [
-        r"wind: proc100 wait reaped child=\d+ status=\d+",
+    "allocator_baseline": [
+        r"wind: allocator selftest PASS",
     ],
 }
 
@@ -82,8 +72,8 @@ def main() -> int:
         return 1
 
     print("Phase 0 smoke test: PASS")
-    print(" - scheduler/spawn/wait/reap baseline observed")
-    print(" - sleep/wakeup behavior observed")
+    print(" - scheduler/allocator boot baseline observed")
+    print(" - romfs catalog initialized")
     print(" - tick free-page counters stable")
     return 0
 
