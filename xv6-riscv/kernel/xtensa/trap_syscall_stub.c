@@ -95,6 +95,33 @@ xtensa_sys_write(struct xtensa_trapframe *tf)
   return (int)n;
 }
 
+static int
+xtensa_sys_read(struct xtensa_trapframe *tf)
+{
+  struct xtensa_proc *p = xtensa_sched_current_proc();
+  uint32 uoffset = tf->arg0;
+  uint32 maxlen = tf->arg1;
+  uint32 avail;
+  int n;
+
+  if(p == 0 || p->ubase == 0 || maxlen == 0)
+    return -1;
+  if(uoffset >= p->usz)
+    return -1;
+
+  avail = p->usz - uoffset;
+  if(maxlen > avail)
+    maxlen = avail;
+
+  n = xtensa_console_read((char *)wind_uaddr_to_kaddr(p, uoffset), maxlen);
+  if(n >= 0)
+    return n;
+
+  /* No committed line yet: sleep and let caller retry after wakeup. */
+  (void)xtensa_sched_sleep_current_on_chan(xtensa_console_line_chan());
+  return -1;
+}
+
 /*
  * xtensa_sys_exec — WIND_SYSCALL_EXEC
  *
@@ -241,6 +268,12 @@ xtensa_trap_handle_syscall(struct xtensa_trapframe *tf)
     tf->retval = xtensa_sys_write(tf);
     kprintf("wind: syscall write(uoff=%u) ret=%d count=%u\n", tf->arg0, (int)tf->retval, syscall_count);
     break;
+  case WIND_SYSCALL_READ:
+    tf->retval = xtensa_sys_read(tf);
+    if((int)tf->retval >= 0)
+      kprintf("wind: syscall read(uoff=%u,max=%u) ret=%d count=%u\n",
+              tf->arg0, tf->arg1, (int)tf->retval, syscall_count);
+    break;
   case WIND_SYSCALL_EXEC:
     tf->retval = xtensa_sys_exec(tf);
     kprintf("wind: syscall exec ret=%d count=%u\n", (int)tf->retval, syscall_count);
@@ -377,6 +410,18 @@ wind_write(uint32 uoffset)
   struct xtensa_trapframe tf;
   tf.syscall_no = WIND_SYSCALL_WRITE;
   tf.arg0 = uoffset;
+  tf.retval = (uint32)-1;
+  xtensa_trap_handle_syscall(&tf);
+  return (int)tf.retval;
+}
+
+int
+wind_read(uint32 uoffset, uint32 maxlen)
+{
+  struct xtensa_trapframe tf;
+  tf.syscall_no = WIND_SYSCALL_READ;
+  tf.arg0 = uoffset;
+  tf.arg1 = maxlen;
   tf.retval = (uint32)-1;
   xtensa_trap_handle_syscall(&tf);
   return (int)tf.retval;

@@ -400,6 +400,7 @@ void
 xtensa_kernel_poll(void)
 {
 #ifdef WIND_ESP_IDF_APP
+  xtensa_console_poll_input();
   uint32 now = timer_ticks();
   while(last_ticks != now){
     uint32 next_tick = last_ticks + 1U;
