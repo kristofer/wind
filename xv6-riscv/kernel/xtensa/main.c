@@ -189,17 +189,22 @@ user_shell_fn(struct xtensa_proc *p)
   }
 }
 
+static const char wind_romfs_motd[] =
+  "wind: romfs bootstrap\n";
+
 /*
- * Embedded program table — the Phase 6 "filesystem".
- * Maps names to kernel entry functions compiled into IROM.
- * Registered with xtensa_program_table_set at boot.
+ * Read-only ROMFS catalog in app flash.
+ * Entries are path-addressable and include executable paths, a sample
+ * data file, and a simple device node.
  */
-static const struct wind_program wind_programs[] = {
-  { "shell", user_shell_fn },
-  { "echo", user_echo_fn },
-  { "ls", user_ls_fn },
-  { "cat", user_cat_fn },
-  { "wc", user_wc_fn },
+static const struct wind_romfs_entry wind_romfs_catalog[] = {
+  { "/bin/shell", WIND_ROMFS_EXEC, 0, 0, user_shell_fn },
+  { "/bin/echo",  WIND_ROMFS_EXEC, 0, 0, user_echo_fn  },
+  { "/bin/ls",    WIND_ROMFS_EXEC, 0, 0, user_ls_fn    },
+  { "/bin/cat",   WIND_ROMFS_EXEC, 0, 0, user_cat_fn   },
+  { "/bin/wc",    WIND_ROMFS_EXEC, 0, 0, user_wc_fn    },
+  { "/etc/motd",  WIND_ROMFS_DATA, wind_romfs_motd, sizeof(wind_romfs_motd) - 1U /* exclude NUL terminator from data_len */, 0 },
+  { WIND_ROMFS_DEV_CONSOLE_PATH, WIND_ROMFS_DEV, 0, 0, 0 },
 };
 
 /*
@@ -388,8 +393,8 @@ xtensa_sched_service_bootstrap(void)
 
   sched_service_ok = 1;
   xtensa_sched_init();
-  xtensa_program_table_set(wind_programs,
-                           sizeof(wind_programs) / sizeof(wind_programs[0]));
+  xtensa_romfs_catalog_set(wind_romfs_catalog,
+                           sizeof(wind_romfs_catalog) / sizeof(wind_romfs_catalog[0]));
   for(i = 0; i < (sizeof(boot_procs) / sizeof(boot_procs[0])); i++){
     if(xtensa_sched_create_proc_fn_parent(boot_procs[i].pid,
                                           boot_procs[i].ppid,
