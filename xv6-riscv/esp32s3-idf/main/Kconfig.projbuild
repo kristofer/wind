@@ -16,4 +16,28 @@ config WIND_ALLOC_NEGATIVE_INVALID_FREE_SELFTEST
         positive self-tests, and should trigger allocator panic. Keep disabled
         for normal development.
 
+config WIND_WIFI_TCP_CONSOLE_ENABLE
+    bool "Enable Wi-Fi TCP console bridge"
+    default n
+    help
+        Starts a Wi-Fi station and a simple TCP listener that bridges to the
+        wind shell input/output path. Serial console remains active.
+
+if WIND_WIFI_TCP_CONSOLE_ENABLE
+
+config WIND_WIFI_SSID
+    string "Wi-Fi SSID"
+    default ""
+
+config WIND_WIFI_PASSWORD
+    string "Wi-Fi Password"
+    default ""
+
+config WIND_TCP_CONSOLE_PORT
+    int "TCP console port"
+    range 1 65535
+    default 2323
+
+endif
+
 endmenu

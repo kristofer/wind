@@ -747,3 +747,80 @@ xtensa_sched_dump(void)
   }
   kprintf("wind: sched dump end\n");
 }
+
+void
+xtensa_sched_ps(void)
+{
+  uint32 i;
+  int pid_snapshot[WIND_SCHED_SLOTS];
+  int ppid_snapshot[WIND_SCHED_SLOTS];
+  int state_snapshot[WIND_SCHED_SLOTS];
+  char name_snapshot[WIND_SCHED_SLOTS][sizeof(procs[0].name)];
+  char cmdline_snapshot[WIND_SCHED_SLOTS][WIND_PROC_CMDLINE_MAX];
+  int current_pid_snapshot;
+  const char *state_name;
+
+  sched_lock_enter();
+  current_pid_snapshot = -1;
+  if(current_index >= 0)
+    current_pid_snapshot = procs[(uint32)current_index].pid;
+
+  for(i = 0; i < WIND_SCHED_SLOTS; i++){
+    uint32 j;
+    uint32 k;
+
+    pid_snapshot[i] = procs[i].pid;
+    ppid_snapshot[i] = procs[i].parent_pid;
+    state_snapshot[i] = (int)procs[i].state;
+    for(k = 0; k < sizeof(procs[i].name); k++){
+      name_snapshot[i][k] = procs[i].name[k];
+      if(procs[i].name[k] == '\0')
+        break;
+    }
+    if(k == sizeof(procs[i].name))
+      name_snapshot[i][sizeof(procs[i].name) - 1U] = '\0';
+    for(j = 0; j < WIND_PROC_CMDLINE_MAX; j++){
+      cmdline_snapshot[i][j] = procs[i].cmdline[j];
+      if(procs[i].cmdline[j] == '\0')
+        break;
+    }
+    if(j == WIND_PROC_CMDLINE_MAX)
+      cmdline_snapshot[i][WIND_PROC_CMDLINE_MAX - 1U] = '\0';
+  }
+  sched_lock_exit();
+
+  kprintf("PID  PPID STATE     CMD\n");
+  for(i = 0; i < WIND_SCHED_SLOTS; i++){
+    const char *cmd = cmdline_snapshot[i];
+
+    if(state_snapshot[i] == XTENSA_PROC_UNUSED)
+      continue;
+
+    switch(state_snapshot[i]){
+    case XTENSA_PROC_RUNNABLE:
+      state_name = "RUNNABLE";
+      break;
+    case XTENSA_PROC_RUNNING:
+      state_name = "RUNNING";
+      break;
+    case XTENSA_PROC_SLEEPING:
+      state_name = "SLEEP";
+      break;
+    case XTENSA_PROC_ZOMBIE:
+      state_name = "ZOMBIE";
+      break;
+    default:
+      state_name = "?";
+      break;
+    }
+
+    if(cmd[0] == '\0'){
+      cmd = name_snapshot[i][0] != '\0' ? name_snapshot[i] : "(kernel)";
+    }
+
+    if(pid_snapshot[i] == current_pid_snapshot)
+      kprintf("%d  %d    %s* %s\n", pid_snapshot[i], ppid_snapshot[i], state_name, cmd);
+    else
+      kprintf("%d  %d    %s %s\n", pid_snapshot[i], ppid_snapshot[i], state_name, cmd);
+  }
+}

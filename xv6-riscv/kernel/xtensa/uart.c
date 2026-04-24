@@ -2,8 +2,19 @@
 #include "kernel/xtensa/xtensa.h"
 
 #ifdef WIND_ESP_IDF_APP
-#include <stdio.h>
+#include "sdkconfig.h"
 #include "esp_rom_serial_output.h"
+
+/* Optional network console hooks (overridden by app component when enabled). */
+__attribute__((weak)) int wind_net_getc_nonblock(void)
+{
+  return -1;
+}
+
+__attribute__((weak)) void wind_net_putc(char c)
+{
+  (void)c;
+}
 #endif
 
 #ifndef WIND_ESP_IDF_APP
@@ -33,8 +44,8 @@ void
 uart_putc(char c)
 {
 #ifdef WIND_ESP_IDF_APP
-  putchar((int)(unsigned char)c);
-  fflush(stdout);
+  wind_net_putc(c);
+  esp_rom_output_putc(c);
 #else
   while(uart_txfifo_full())
     ;
@@ -59,9 +70,19 @@ int
 uart_getc_nonblock(void)
 {
 #ifdef WIND_ESP_IDF_APP
-  uint8_t c = 0;
+  uint8_t c;
+
+  c = 0;
+  {
+    int nc = wind_net_getc_nonblock();
+    if(nc >= 0)
+      return nc;
+  }
+
+  c = 0;
   if(esp_rom_output_rx_one_char(&c) == 0)
     return (int)c;
+
   return -1;
 #else
   uint32 rxfifo_cnt = xtensa_mmio_read32(UART_STATUS_REG) & UART_RXFIFO_CNT_MASK;

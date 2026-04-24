@@ -7,32 +7,19 @@
 #include "esp_rom_sys.h"
 
 #define BACKSPACE 0x100
-#define CONSOLE_LINE_BUFSZ 256
 #define CONSOLE_INPUT_BUFSZ 256
 #define CONSOLE_LINE_CHAN 0x434F4E53U
 #define ASCII_SPACE 0x20
 #define ASCII_DEL 0x7f
 
-static char console_line[CONSOLE_LINE_BUFSZ];
-static uint32 console_len;
 static struct {
   char buf[CONSOLE_INPUT_BUFSZ];
   uint32 r;
   uint32 w;
   uint32 e;
 } console_input;
+static int console_last_was_cr;
 static char digits[] = "0123456789abcdef";
-
-static void
-console_flush(void)
-{
-  if(console_len == 0)
-    return;
-
-  console_line[console_len] = '\0';
-  esp_rom_printf("%s\n", console_line);
-  console_len = 0;
-}
 
 void
 consputc(int c)
@@ -41,20 +28,19 @@ consputc(int c)
     return;
 
   if(c == BACKSPACE){
-    if(console_len > 0)
-      console_len--;
+    uart_putc('\b');
+    uart_putc(' ');
+    uart_putc('\b');
     return;
   }
 
   if(c == '\n'){
-    console_flush();
+    uart_putc('\r');
+    uart_putc('\n');
     return;
   }
 
-  if(console_len >= CONSOLE_LINE_BUFSZ - 1)
-    console_flush();
-
-  console_line[console_len++] = (char)c;
+  uart_putc((char)c);
 }
 
 uint32
@@ -88,8 +74,17 @@ console_input_ingest_char(int c)
   if(c < 0)
     return;
 
-  if(c == '\r')
+  /* Treat CRLF as a single newline (common with USB serial monitors). */
+  if(c == '\r'){
     c = '\n';
+    console_last_was_cr = 1;
+  } else {
+    if(c == '\n' && console_last_was_cr){
+      console_last_was_cr = 0;
+      return;
+    }
+    console_last_was_cr = 0;
+  }
 
   if(c == '\b' || c == ASCII_DEL){
     if(console_input.e > console_input.w){

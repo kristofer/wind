@@ -3,6 +3,7 @@ set(WIND_ROOT ${CMAKE_CURRENT_LIST_DIR}/../..)
 idf_component_register(
     SRCS
         app_main.c
+        wind_tcp_console.c
         ${WIND_ROOT}/kernel/xtensa/console_idf.c
         ${WIND_ROOT}/kernel/xtensa/kalloc_wrap.c
         ${WIND_ROOT}/kernel/xtensa/main.c
@@ -13,6 +14,13 @@ idf_component_register(
         ${WIND_ROOT}/kernel/xtensa/uart.c
     INCLUDE_DIRS
         ${WIND_ROOT}
+    REQUIRES
+        esp_event
+        esp_netif
+        esp_timer
+        esp_wifi
+        lwip
+        nvs_flash
 )
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE WIND_ESP_IDF_APP=1)

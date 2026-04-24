@@ -122,6 +122,7 @@ struct xtensa_proc *xtensa_sched_current_proc(void);
 uint32 xtensa_sched_runnable_count(void);
 uint32 xtensa_sched_sleeping_count(void);
 uint32 xtensa_sched_zombie_count(void);
+void xtensa_sched_ps(void);
 int xtensa_sched_sleep_current(void);
 int xtensa_sched_wakeup_pid(int pid);
 int xtensa_sched_sleep_current_on_chan(uint32 chan);

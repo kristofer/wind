@@ -4,6 +4,8 @@
 #ifdef WIND_ESP_IDF_APP
 #include "sdkconfig.h"
 #include "esp_system.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <stdio.h>
 extern void kinit(void);
 extern void *kalloc(void);
@@ -16,6 +18,7 @@ static uint32 last_logged_second;
 #define WIND_SELFTEST_MAX_PAGES 64U
 static void *selftest_pages[WIND_SELFTEST_MAX_PAGES];
 static uint32 selftest_allocated;
+static uint32 shell_interactive_started;
 static int selftest_ok;
 static int sched_service_ok;
 #define WIND_ROMFS_IO_BUFSZ 64U
@@ -137,7 +140,17 @@ user_ls_fn(struct xtensa_proc *p)
   p->fn_state++;
   if(p->fn_state == 1){
     if(wind_proc_uregion_alloc(64) == 0)
-      wind_write_cstr(p, 0, "echo\nls\ncat\nwc\ngrep\nmkdir\nrm\nshell\n");
+      wind_write_cstr(p, 0, "echo\nls\ncat\nwc\ngrep\nmkdir\nrm\nps\nshell\n");
+    wind_exit(0);
+  }
+}
+
+static void
+user_ps_fn(struct xtensa_proc *p)
+{
+  p->fn_state++;
+  if(p->fn_state == 1){
+    xtensa_sched_ps();
     wind_exit(0);
   }
 }
@@ -370,6 +383,7 @@ user_shell_fn(struct xtensa_proc *p)
   }
 
   if(p->fn_state == 1){
+    shell_interactive_started = 1;
     wind_write_cstr(p, 0, "$ ");
     p->fn_state = 2;
     return;
@@ -436,6 +450,7 @@ static const struct wind_romfs_entry wind_romfs_catalog[] = {
   { "/bin/grep",  WIND_ROMFS_EXEC, 0, 0, user_grep_fn  },
   { "/bin/mkdir", WIND_ROMFS_EXEC, 0, 0, user_mkdir_fn },
   { "/bin/rm",    WIND_ROMFS_EXEC, 0, 0, user_rm_fn    },
+  { "/bin/ps",    WIND_ROMFS_EXEC, 0, 0, user_ps_fn    },
   { "/etc/motd",  WIND_ROMFS_DATA, wind_romfs_motd, sizeof(wind_romfs_motd) - 1U /* exclude NUL terminator from data_len */, 0 },
   { WIND_ROMFS_DEV_CONSOLE_PATH, WIND_ROMFS_DEV, 0, 0, 0 },
 };
@@ -735,7 +750,7 @@ xtensa_kernel_poll(void)
     if(seconds != last_logged_second){
       /* Only emit tick messages during the boot window (first 10 seconds).
        * After that the console is used for interactive shell I/O. */
-      if(seconds <= 10U){
+      if(seconds <= 10U && shell_interactive_started == 0){
         kprintf("wind: tick=%u seconds=%u current_pid=%d runnable=%u sleeping=%u zombie=%u free_pages=%u/%u\n",
                 next_tick,
                 seconds,
@@ -764,6 +779,11 @@ void
 xtensa_kernel_main(void)
 {
   xtensa_kernel_init();
-  for(;;)
+  for(;;){
     xtensa_kernel_poll();
+#ifdef WIND_ESP_IDF_APP
+    /* Let FreeRTOS idle/task-WDT housekeeping run on CPU0. */
+    vTaskDelay(1);
+#endif
+  }
 }
