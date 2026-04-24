@@ -434,7 +434,7 @@ user_shell_fn(struct xtensa_proc *p)
 }
 
 static const char wind_romfs_motd[] =
-  "wind: romfs bootstrap\n";
+  "wind: romfs bootstrap\nfoo bar baz\nzipcode\n";
 
 /*
  * Read-only ROMFS catalog in app flash.
